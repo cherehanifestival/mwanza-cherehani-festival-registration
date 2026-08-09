@@ -1,0 +1,2 @@
+# mwanza-cherehani-festival-registration
+usajili wa maonyesho ya cherehani festival
