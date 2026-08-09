@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = "https://ruxcevsfunszrveqhgjm.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const ADMIN_EMAIL = "cherehanifestival2026@gmail.com";
@@ -18,29 +17,51 @@ const statuses = [
   ["amekataliwa", "Amekataliwa"],
 ];
 
+const emptyPackage = {
+  name: "",
+  category: "",
+  tent_size: "",
+  price: "",
+  vat_note: "",
+  description: "",
+  included_items: "",
+  participant_limit: "",
+  display_order: 0,
+  is_active: true,
+};
+
 function whatsappNumber(phone = "") {
   let n = phone.replace(/\D/g, "");
 
-  if (n.startsWith("0")) {
-    n = "255" + n.substring(1);
-  }
-
-  if (!n.startsWith("255")) {
-    n = "255" + n;
-  }
+  if (n.startsWith("0")) n = "255" + n.substring(1);
+  if (!n.startsWith("255")) n = "255" + n;
 
   return n;
+}
+
+function money(value) {
+  return new Intl.NumberFormat("sw-TZ").format(Number(value || 0));
 }
 
 export default function Admin() {
   const [session, setSession] = useState(null);
   const [email, setEmail] = useState(ADMIN_EMAIL);
   const [password, setPassword] = useState("");
+
+  const [tab, setTab] = useState("registrations");
+
   const [registrations, setRegistrations] = useState([]);
+  const [packages, setPackages] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState("");
+
   const [selected, setSelected] = useState(null);
+
+  const [packageForm, setPackageForm] = useState(emptyPackage);
+  const [editingPackageId, setEditingPackageId] = useState(null);
+  const [savingPackage, setSavingPackage] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -60,11 +81,13 @@ export default function Admin() {
   useEffect(() => {
     if (session?.user?.email === ADMIN_EMAIL) {
       loadRegistrations();
+      loadPackages();
     }
   }, [session]);
 
   async function login(e) {
     e.preventDefault();
+
     setError("");
     setLoginLoading(true);
 
@@ -83,38 +106,51 @@ export default function Admin() {
 
     if (data.user?.email !== ADMIN_EMAIL) {
       await supabase.auth.signOut();
-      setError("Huna ruhusa ya kuingia kwenye mfumo huu.");
+      setError("Huna ruhusa ya kutumia mfumo huu.");
     }
   }
 
   async function logout() {
     await supabase.auth.signOut();
     setRegistrations([]);
+    setPackages([]);
   }
 
   async function loadRegistrations() {
-    setLoading(true);
-
     const { data, error: fetchError } = await supabase
       .from("registrations")
       .select("*")
       .order("created_at", { ascending: false });
 
-    setLoading(false);
-
     if (fetchError) {
       console.error(fetchError);
-      setError("Imeshindikana kupakia orodha ya washiriki.");
+      setError("Imeshindikana kupakia washiriki.");
       return;
     }
 
     setRegistrations(data || []);
   }
 
+  async function loadPackages() {
+    const { data, error: fetchError } = await supabase
+      .from("packages")
+      .select("*")
+      .order("display_order", { ascending: true });
+
+    if (fetchError) {
+      console.error(fetchError);
+      return;
+    }
+
+    setPackages(data || []);
+  }
+
   async function updateStatus(id, status) {
     const { error: updateError } = await supabase
       .from("registrations")
-      .update({ hali_ya_usajili: status })
+      .update({
+        hali_ya_usajili: status,
+      })
       .eq("id", id);
 
     if (updateError) {
@@ -129,13 +165,106 @@ export default function Admin() {
           : item
       )
     );
+  }
 
-    if (selected?.id === id) {
-      setSelected((current) => ({
-        ...current,
-        hali_ya_usajili: status,
-      }));
+  function editPackage(pkg) {
+    setEditingPackageId(pkg.id);
+
+    setPackageForm({
+      name: pkg.name || "",
+      category: pkg.category || "",
+      tent_size: pkg.tent_size || "",
+      price: pkg.price || "",
+      vat_note: pkg.vat_note || "",
+      description: pkg.description || "",
+      included_items: pkg.included_items || "",
+      participant_limit: pkg.participant_limit || "",
+      display_order: pkg.display_order || 0,
+      is_active: pkg.is_active,
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelPackageEdit() {
+    setEditingPackageId(null);
+    setPackageForm(emptyPackage);
+  }
+
+  async function savePackage(e) {
+    e.preventDefault();
+
+    if (!packageForm.name.trim()) {
+      alert("Weka jina la kifurushi.");
+      return;
     }
+
+    if (!packageForm.price && Number(packageForm.price) !== 0) {
+      alert("Weka bei ya kifurushi.");
+      return;
+    }
+
+    setSavingPackage(true);
+
+    const payload = {
+      name: packageForm.name.trim(),
+      category: packageForm.category.trim() || null,
+      tent_size: packageForm.tent_size.trim() || null,
+      price: Number(packageForm.price) || 0,
+      vat_note: packageForm.vat_note.trim() || null,
+      description: packageForm.description.trim() || null,
+      included_items:
+        packageForm.included_items.trim() || null,
+      participant_limit:
+        packageForm.participant_limit === ""
+          ? null
+          : Number(packageForm.participant_limit),
+      display_order:
+        Number(packageForm.display_order) || 0,
+      is_active: packageForm.is_active,
+      updated_at: new Date().toISOString(),
+    };
+
+    let response;
+
+    if (editingPackageId) {
+      response = await supabase
+        .from("packages")
+        .update(payload)
+        .eq("id", editingPackageId);
+    } else {
+      response = await supabase
+        .from("packages")
+        .insert([payload]);
+    }
+
+    setSavingPackage(false);
+
+    if (response.error) {
+      console.error(response.error);
+      alert("Imeshindikana kuhifadhi kifurushi.");
+      return;
+    }
+
+    cancelPackageEdit();
+    await loadPackages();
+  }
+
+  async function togglePackage(pkg) {
+    const { error: updateError } = await supabase
+      .from("packages")
+      .update({
+        is_active: !pkg.is_active,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", pkg.id);
+
+    if (updateError) {
+      alert("Imeshindikana kubadilisha kifurushi.");
+      return;
+    }
+
+    loadPackages();
   }
 
   const mpya = registrations.filter(
@@ -183,12 +312,13 @@ export default function Admin() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Weka nenosiri"
                   required
                 />
               </label>
 
-              {error && <div className="admin-error">{error}</div>}
+              {error && (
+                <div className="admin-error">{error}</div>
+              )}
 
               <button type="submit" disabled={loginLoading}>
                 {loginLoading ? "Inaingia..." : "INGIA"}
@@ -210,11 +340,11 @@ export default function Admin() {
         <header className="admin-header">
           <div>
             <small>MWANZA CHEREHANI FESTIVAL 2026</small>
-            <h1>Dashibodi ya Usajili</h1>
+            <h1>Dashibodi ya Usimamizi</h1>
           </div>
 
           <div className="header-actions">
-            <a href="/" target="_blank">
+            <a href="/" target="_blank" rel="noreferrer">
               Fungua Fomu
             </a>
 
@@ -222,119 +352,438 @@ export default function Admin() {
           </div>
         </header>
 
-        <section className="stats">
-          <div>
-            <span>Washiriki Wote</span>
-            <strong>{registrations.length}</strong>
-          </div>
+        <nav className="admin-tabs">
+          <button
+            className={
+              tab === "registrations" ? "active" : ""
+            }
+            onClick={() => setTab("registrations")}
+          >
+            Washiriki
+          </button>
 
-          <div>
-            <span>Usajili Mpya</span>
-            <strong>{mpya}</strong>
-          </div>
+          <button
+            className={tab === "packages" ? "active" : ""}
+            onClick={() => setTab("packages")}
+          >
+            Vifurushi
+          </button>
+        </nav>
 
-          <div>
-            <span>Wamelipa</span>
-            <strong>{amelipa}</strong>
-          </div>
+        {tab === "registrations" && (
+          <>
+            <section className="stats">
+              <div>
+                <span>Washiriki Wote</span>
+                <strong>{registrations.length}</strong>
+              </div>
 
-          <div>
-            <span>Wamethibitishwa</span>
-            <strong>{confirmed}</strong>
-          </div>
-        </section>
+              <div>
+                <span>Usajili Mpya</span>
+                <strong>{mpya}</strong>
+              </div>
 
-        <section className="admin-panel">
-          <div className="panel-header">
-            <div>
-              <h2>Orodha ya Washiriki</h2>
-              <p>Simamia maombi yote yaliyowasilishwa.</p>
-            </div>
+              <div>
+                <span>Wamelipa</span>
+                <strong>{amelipa}</strong>
+              </div>
 
-            <button onClick={loadRegistrations}>
-              ↻ Refresh
-            </button>
-          </div>
+              <div>
+                <span>Wamethibitishwa</span>
+                <strong>{confirmed}</strong>
+              </div>
+            </section>
 
-          {error && <div className="admin-error">{error}</div>}
+            <section className="admin-panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Orodha ya Washiriki</h2>
+                  <p>
+                    Simamia maombi yote yaliyowasilishwa.
+                  </p>
+                </div>
 
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Jina</th>
-                  <th>Biashara</th>
-                  <th>Simu</th>
-                  <th>Aina ya Ushiriki</th>
-                  <th>Hali</th>
-                  <th>Vitendo</th>
-                </tr>
-              </thead>
+                <button onClick={loadRegistrations}>
+                  ↻ Refresh
+                </button>
+              </div>
 
-              <tbody>
-                {registrations.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <strong>{r.jina_kamili}</strong>
-                      <small>
-                        {new Date(r.created_at).toLocaleDateString(
-                          "sw-TZ"
-                        )}
-                      </small>
-                    </td>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Jina</th>
+                      <th>Biashara</th>
+                      <th>Simu</th>
+                      <th>Kifurushi</th>
+                      <th>Bei</th>
+                      <th>Hali</th>
+                      <th>Vitendo</th>
+                    </tr>
+                  </thead>
 
-                    <td>{r.jina_biashara || "—"}</td>
+                  <tbody>
+                    {registrations.map((r) => (
+                      <tr key={r.id}>
+                        <td>
+                          <strong>{r.jina_kamili}</strong>
 
-                    <td>{r.namba_simu}</td>
+                          <small>
+                            {new Date(
+                              r.created_at
+                            ).toLocaleDateString("sw-TZ")}
+                          </small>
+                        </td>
 
-                    <td>
-                      {(r.aina_ushiriki || []).join(", ")}
-                    </td>
+                        <td>{r.jina_biashara || "—"}</td>
 
-                    <td>
-                      <select
-                        value={r.hali_ya_usajili}
-                        onChange={(e) =>
-                          updateStatus(r.id, e.target.value)
-                        }
+                        <td>{r.namba_simu}</td>
+
+                        <td>{r.package_name || "—"}</td>
+
+                        <td>
+                          {r.package_price
+                            ? `TSh ${money(
+                                r.package_price
+                              )}`
+                            : "—"}
+                        </td>
+
+                        <td>
+                          <select
+                            value={r.hali_ya_usajili}
+                            onChange={(e) =>
+                              updateStatus(
+                                r.id,
+                                e.target.value
+                              )
+                            }
+                          >
+                            {statuses.map(
+                              ([value, label]) => (
+                                <option
+                                  key={value}
+                                  value={value}
+                                >
+                                  {label}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </td>
+
+                        <td className="actions">
+                          <button
+                            onClick={() => setSelected(r)}
+                          >
+                            Angalia
+                          </button>
+
+                          <a
+                            href={`https://wa.me/${whatsappNumber(
+                              r.namba_simu
+                            )}?text=${encodeURIComponent(
+                              `Habari ${
+                                r.jina_kamili
+                              }, tunawasiliana nawe kutoka Mwanza Cherehani Festival 2026 kuhusu usajili wako${
+                                r.package_name
+                                  ? `. Umechagua kifurushi cha ${r.package_name} chenye gharama ya TSh ${money(
+                                      r.package_price
+                                    )}${
+                                      r.package_vat_note
+                                        ? ` ${r.package_vat_note}`
+                                        : ""
+                                    }.`
+                                  : "."
+                              } Tutakutumia maelekezo rasmi ya malipo.`
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            WhatsApp
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {registrations.length === 0 && (
+                <div className="empty">
+                  Hakuna usajili uliopatikana.
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {tab === "packages" && (
+          <>
+            <section className="package-editor">
+              <h2>
+                {editingPackageId
+                  ? "Hariri Kifurushi"
+                  : "Ongeza Kifurushi"}
+              </h2>
+
+              <form
+                className="package-form"
+                onSubmit={savePackage}
+              >
+                <label>
+                  Jina la Kifurushi *
+                  <input
+                    value={packageForm.name}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        name: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </label>
+
+                <label>
+                  Sekta / Aina
+                  <input
+                    value={packageForm.category}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        category: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Ukubwa wa Tenti / Eneo
+                  <input
+                    value={packageForm.tent_size}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        tent_size: e.target.value,
+                      })
+                    }
+                    placeholder="Mfano: 5x5 m"
+                  />
+                </label>
+
+                <label>
+                  Bei (TSh) *
+                  <input
+                    type="number"
+                    min="0"
+                    value={packageForm.price}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        price: e.target.value,
+                      })
+                    }
+                    required
+                  />
+                </label>
+
+                <label>
+                  VAT
+                  <input
+                    value={packageForm.vat_note}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        vat_note: e.target.value,
+                      })
+                    }
+                    placeholder="+ VAT"
+                  />
+                </label>
+
+                <label>
+                  Idadi ya Washiriki
+                  <input
+                    type="number"
+                    min="1"
+                    value={packageForm.participant_limit}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        participant_limit:
+                          e.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="wide">
+                  Maelezo ya Kifurushi
+                  <textarea
+                    rows="3"
+                    value={packageForm.description}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        description: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="wide">
+                  Vitu Vilivyojumuishwa
+                  <textarea
+                    rows="3"
+                    value={packageForm.included_items}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        included_items:
+                          e.target.value,
+                      })
+                    }
+                    placeholder="Mfano: Meza 1 + Kiti 1"
+                  />
+                </label>
+
+                <label>
+                  Mpangilio
+                  <input
+                    type="number"
+                    value={packageForm.display_order}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        display_order: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="active-check">
+                  <input
+                    type="checkbox"
+                    checked={packageForm.is_active}
+                    onChange={(e) =>
+                      setPackageForm({
+                        ...packageForm,
+                        is_active: e.target.checked,
+                      })
+                    }
+                  />
+
+                  Kifurushi kinaonekana kwa waombaji
+                </label>
+
+                <div className="package-buttons wide">
+                  <button
+                    className="save-package"
+                    type="submit"
+                    disabled={savingPackage}
+                  >
+                    {savingPackage
+                      ? "Inahifadhi..."
+                      : editingPackageId
+                      ? "HIFADHI MABADILIKO"
+                      : "ONGEZA KIFURUSHI"}
+                  </button>
+
+                  {editingPackageId && (
+                    <button
+                      type="button"
+                      className="cancel-package"
+                      onClick={cancelPackageEdit}
+                    >
+                      Ghairi
+                    </button>
+                  )}
+                </div>
+              </form>
+            </section>
+
+            <section className="admin-panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Vifurushi vya Ushiriki</h2>
+                  <p>
+                    Badilisha bei na maelezo bila kugusa
+                    GitHub.
+                  </p>
+                </div>
+
+                <button onClick={loadPackages}>
+                  ↻ Refresh
+                </button>
+              </div>
+
+              <div className="package-list">
+                {packages.map((pkg) => (
+                  <div
+                    className={`package-admin-card ${
+                      !pkg.is_active ? "inactive" : ""
+                    }`}
+                    key={pkg.id}
+                  >
+                    <div>
+                      <span className="package-status">
+                        {pkg.is_active
+                          ? "KINAONEKANA"
+                          : "KIMEZIMWA"}
+                      </span>
+
+                      <h3>{pkg.name}</h3>
+
+                      <strong className="package-price">
+                        TSh {money(pkg.price)}
+                        {pkg.vat_note
+                          ? ` ${pkg.vat_note}`
+                          : ""}
+                      </strong>
+
+                      <p>
+                        {pkg.tent_size || "Ukubwa haujawekwa"}
+                      </p>
+
+                      {pkg.description && (
+                        <p>{pkg.description}</p>
+                      )}
+
+                      {pkg.included_items && (
+                        <p>
+                          <strong>Inajumuisha:</strong>{" "}
+                          {pkg.included_items}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="package-card-actions">
+                      <button
+                        onClick={() => editPackage(pkg)}
                       >
-                        {statuses.map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    <td className="actions">
-                      <button onClick={() => setSelected(r)}>
-                        Angalia
+                        Hariri
                       </button>
 
-                      <a
-                        href={`https://wa.me/${whatsappNumber(
-                          r.namba_simu
-                        )}?text=${encodeURIComponent(
-                          `Habari ${r.jina_kamili}, tunawasiliana nawe kutoka Mwanza Cherehani Festival 2026 kuhusu usajili wako.`
-                        )}`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        className={
+                          pkg.is_active
+                            ? "disable"
+                            : "enable"
+                        }
+                        onClick={() => togglePackage(pkg)}
                       >
-                        WhatsApp
-                      </a>
-                    </td>
-                  </tr>
+                        {pkg.is_active
+                          ? "Zima"
+                          : "Washa"}
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-
-          {!loading && registrations.length === 0 && (
-            <div className="empty">
-              Hakuna usajili uliopatikana.
-            </div>
-          )}
-        </section>
+              </div>
+            </section>
+          </>
+        )}
 
         {selected && (
           <div
@@ -353,55 +802,83 @@ export default function Admin() {
               </button>
 
               <h2>{selected.jina_kamili}</h2>
-              <p className="business">
-                {selected.jina_biashara || "Hakuna jina la biashara"}
+
+              <p>
+                {selected.jina_biashara ||
+                  "Hakuna jina la biashara"}
               </p>
 
               <div className="detail-grid">
-                <Info label="Simu" value={selected.namba_simu} />
+                <Info
+                  label="Simu"
+                  value={selected.namba_simu}
+                />
+
                 <Info
                   label="Barua Pepe"
                   value={selected.barua_pepe || "—"}
                 />
-                <Info label="Mkoa" value={selected.mkoa} />
+
+                <Info
+                  label="Mkoa"
+                  value={selected.mkoa}
+                />
+
                 <Info
                   label="Mji/Wilaya"
-                  value={selected.mji_wilaya || "—"}
+                  value={
+                    selected.mji_wilaya || "—"
+                  }
                 />
+
                 <Info
-                  label="Mahali Biashara Ilipo"
-                  value={selected.mahali_biashara_ilipo || "—"}
+                  label="Kifurushi"
+                  value={
+                    selected.package_name || "—"
+                  }
                 />
+
                 <Info
-                  label="Muda wa Ushiriki"
-                  value={selected.muda_ushiriki || "—"}
+                  label="Bei"
+                  value={
+                    selected.package_price
+                      ? `TSh ${money(
+                          selected.package_price
+                        )}`
+                      : "—"
+                  }
+                />
+
+                <Info
+                  label="Ukubwa"
+                  value={
+                    selected.package_tent_size ||
+                    "—"
+                  }
+                />
+
+                <Info
+                  label="VAT"
+                  value={
+                    selected.package_vat_note ||
+                    "—"
+                  }
                 />
               </div>
 
               <h3>Aina ya Ushiriki</h3>
+
               <p>
-                {(selected.aina_ushiriki || []).join(", ") || "—"}
+                {(selected.aina_ushiriki || []).join(
+                  ", "
+                ) || "—"}
               </p>
 
               <h3>Bidhaa / Huduma</h3>
-              <p>{selected.maelezo_bidhaa_huduma}</p>
 
-              <h3>Mahitaji</h3>
               <p>
-                Meza: {selected.idadi_meza || 0} · Viti:{" "}
-                {selected.idadi_viti || 0}
-                <br />
-                Umeme: {selected.umeme ? "Ndiyo" : "Hapana"} ·
-                Tenti: {selected.tenti ? "Ndiyo" : "Hapana"} ·
-                Maji: {selected.maji ? "Ndiyo" : "Hapana"}
+                {selected.maelezo_bidhaa_huduma}
               </p>
-
-              {selected.mahitaji_mengine && (
-                <>
-                  <h3>Mahitaji Mengine</h3>
-                  <p>{selected.mahitaji_mengine}</p>
-                </>
-              )}
 
               <div className="modal-actions">
                 <a
@@ -415,7 +892,9 @@ export default function Admin() {
                 </a>
 
                 {selected.barua_pepe && (
-                  <a href={`mailto:${selected.barua_pepe}`}>
+                  <a
+                    href={`mailto:${selected.barua_pepe}`}
+                  >
                     Tuma Email
                   </a>
                 )}
@@ -442,13 +921,22 @@ function Info({ label, value }) {
 }
 
 const adminStyles = `
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
   font-family: Arial, Helvetica, sans-serif;
   background: #f3f4f6;
   color: #1f2937;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
 .admin-login-page {
@@ -464,7 +952,6 @@ body {
   background: white;
   padding: 34px;
   border-radius: 20px;
-  box-shadow: 0 20px 50px rgba(0,0,0,.2);
 }
 
 .admin-badge {
@@ -477,13 +964,6 @@ body {
 
 .login-card h1 {
   color:#14532d;
-  margin-bottom:8px;
-}
-
-.login-card h2 {
-  font-size:18px;
-  color:#6b7280;
-  margin-bottom:26px;
 }
 
 .login-card label {
@@ -533,10 +1013,6 @@ body {
   place-items:center;
 }
 
-.dashboard {
-  min-height:100vh;
-}
-
 .admin-header {
   background:#14532d;
   color:white;
@@ -544,11 +1020,6 @@ body {
   display:flex;
   justify-content:space-between;
   align-items:center;
-  gap:20px;
-}
-
-.admin-header h1 {
-  margin:5px 0 0;
 }
 
 .header-actions {
@@ -564,7 +1035,25 @@ body {
   text-decoration:none;
   padding:11px 15px;
   border-radius:9px;
+}
+
+.admin-tabs {
+  display:flex;
+  gap:10px;
+  padding:20px max(20px,5vw) 0;
+}
+
+.admin-tabs button {
+  border:0;
+  padding:12px 20px;
+  border-radius:10px;
+  font-weight:800;
   cursor:pointer;
+}
+
+.admin-tabs .active {
+  background:#166534;
+  color:white;
 }
 
 .stats {
@@ -578,12 +1067,10 @@ body {
   background:white;
   padding:20px;
   border-radius:14px;
-  box-shadow:0 5px 15px rgba(0,0,0,.05);
 }
 
 .stats span {
   color:#6b7280;
-  display:block;
 }
 
 .stats strong {
@@ -593,8 +1080,9 @@ body {
   color:#14532d;
 }
 
-.admin-panel {
-  margin:0 max(20px,5vw) 40px;
+.admin-panel,
+.package-editor {
+  margin:25px max(20px,5vw);
   background:white;
   border-radius:16px;
   padding:22px;
@@ -604,20 +1092,6 @@ body {
   display:flex;
   justify-content:space-between;
   align-items:center;
-}
-
-.panel-header h2 {
-  margin-bottom:3px;
-}
-
-.panel-header p {
-  margin-top:0;
-  color:#6b7280;
-}
-
-.panel-header button {
-  padding:10px 14px;
-  cursor:pointer;
 }
 
 .table-wrap {
@@ -630,26 +1104,16 @@ table {
   min-width:900px;
 }
 
-th,td {
+th,
+td {
   text-align:left;
   padding:14px 10px;
   border-bottom:1px solid #e5e7eb;
-  vertical-align:top;
-}
-
-th {
-  background:#f9fafb;
 }
 
 td small {
   display:block;
   color:#6b7280;
-  margin-top:4px;
-}
-
-td select {
-  padding:8px;
-  border-radius:7px;
 }
 
 .actions {
@@ -665,13 +1129,119 @@ td select {
   padding:8px 10px;
   border-radius:7px;
   text-decoration:none;
+}
+
+.package-form {
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:16px;
+}
+
+.package-form label {
+  font-weight:700;
+}
+
+.package-form input,
+.package-form textarea {
+  width:100%;
+  margin-top:7px;
+  padding:12px;
+  border:1px solid #d1d5db;
+  border-radius:9px;
+}
+
+.package-form .wide {
+  grid-column:1 / -1;
+}
+
+.active-check {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.active-check input {
+  width:auto;
+}
+
+.package-buttons {
+  display:flex;
+  gap:10px;
+}
+
+.save-package {
+  background:#166534;
+  color:white;
+  border:0;
+  padding:13px 18px;
+  border-radius:9px;
+  font-weight:800;
+}
+
+.cancel-package {
+  border:1px solid #d1d5db;
+  background:white;
+  padding:13px 18px;
+  border-radius:9px;
+}
+
+.package-list {
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:16px;
+}
+
+.package-admin-card {
+  border:1px solid #e5e7eb;
+  padding:20px;
+  border-radius:14px;
+}
+
+.package-admin-card.inactive {
+  opacity:.55;
+}
+
+.package-status {
+  font-size:11px;
+  background:#dcfce7;
+  color:#166534;
+  padding:5px 8px;
+  border-radius:99px;
+  font-weight:800;
+}
+
+.package-price {
+  display:block;
+  font-size:22px;
+  color:#14532d;
+  margin:8px 0;
+}
+
+.package-card-actions {
+  display:flex;
+  gap:10px;
+}
+
+.package-card-actions button {
+  border:0;
+  padding:10px 14px;
+  border-radius:8px;
   cursor:pointer;
 }
 
-.empty {
-  padding:40px;
-  text-align:center;
-  color:#6b7280;
+.package-card-actions button:first-child {
+  background:#166534;
+  color:white;
+}
+
+.package-card-actions .disable {
+  background:#fee2e2;
+  color:#991b1b;
+}
+
+.package-card-actions .enable {
+  background:#dcfce7;
+  color:#166534;
 }
 
 .modal-backdrop {
@@ -681,7 +1251,6 @@ td select {
   display:grid;
   place-items:center;
   padding:20px;
-  z-index:20;
 }
 
 .detail-modal {
@@ -701,23 +1270,12 @@ td select {
   border:0;
   background:none;
   font-size:30px;
-  cursor:pointer;
-}
-
-.detail-modal h2 {
-  color:#14532d;
-  margin-bottom:3px;
-}
-
-.business {
-  color:#6b7280;
 }
 
 .detail-grid {
   display:grid;
   grid-template-columns:repeat(2,1fr);
   gap:12px;
-  margin:22px 0;
 }
 
 .info {
@@ -732,15 +1290,9 @@ td select {
   font-size:13px;
 }
 
-.info strong {
-  display:block;
-  margin-top:5px;
-}
-
 .modal-actions {
   display:flex;
   gap:10px;
-  flex-wrap:wrap;
   margin-top:24px;
 }
 
@@ -752,18 +1304,35 @@ td select {
   border-radius:8px;
 }
 
+.empty {
+  padding:40px;
+  text-align:center;
+}
+
 @media(max-width:800px) {
-  .stats {
-    grid-template-columns:repeat(2,1fr);
+  .stats,
+  .package-list,
+  .package-form {
+    grid-template-columns:1fr 1fr;
   }
 
   .admin-header {
-    align-items:flex-start;
     flex-direction:column;
+    align-items:flex-start;
+    gap:15px;
   }
+}
 
+@media(max-width:600px) {
+  .stats,
+  .package-list,
+  .package-form,
   .detail-grid {
     grid-template-columns:1fr;
+  }
+
+  .package-form .wide {
+    grid-column:auto;
   }
 }
 `;
