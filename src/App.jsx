@@ -55,7 +55,6 @@ export default function App() {
   const [form, setForm] = useState(initialForm);
   const [packages, setPackages] = useState([]);
   const [packagesLoading, setPackagesLoading] = useState(true);
-
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -66,6 +65,7 @@ export default function App() {
 
   async function loadPackages() {
     setPackagesLoading(true);
+    setError("");
 
     const { data, error: packageError } = await supabase
       .from("packages")
@@ -88,14 +88,14 @@ export default function App() {
     (pkg) => pkg.id === form.package_id
   );
 
-  const updateField = (field, value) => {
+  function updateField(field, value) {
     setForm((prev) => ({
       ...prev,
       [field]: value,
     }));
-  };
+  }
 
-  const toggleUshiriki = (item) => {
+  function toggleUshiriki(item) {
     setForm((prev) => {
       const exists = prev.aina_ushiriki.includes(item);
 
@@ -106,9 +106,9 @@ export default function App() {
           : [...prev.aina_ushiriki, item],
       };
     });
-  };
+  }
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
 
@@ -162,14 +162,11 @@ export default function App() {
           anwani: form.anwani.trim() || null,
           mahali_biashara_ilipo:
             form.mahali_biashara_ilipo.trim() || null,
-
           aina_ushiriki: form.aina_ushiriki,
           aina_ushiriki_nyingine:
             form.aina_ushiriki_nyingine.trim() || null,
-
           maelezo_bidhaa_huduma:
             form.maelezo_bidhaa_huduma.trim(),
-
           idadi_meza: Number(form.idadi_meza) || 0,
           idadi_viti: Number(form.idadi_viti) || 0,
           umeme: form.umeme,
@@ -177,13 +174,8 @@ export default function App() {
           maji: form.maji,
           mahitaji_mengine: form.mahitaji_mengine.trim() || null,
           muda_ushiriki: form.muda_ushiriki || null,
-
           amekubali_tamko: true,
-
           package_id: selectedPackage.id,
-
-          // SNAPSHOT:
-          // keeps original package information even if admin edits it later.
           package_name: selectedPackage.name,
           package_price: Number(selectedPackage.price),
           package_tent_size: selectedPackage.tent_size || null,
@@ -208,7 +200,7 @@ export default function App() {
       top: 0,
       behavior: "smooth",
     });
-  };
+  }
 
   if (success) {
     return (
@@ -336,7 +328,9 @@ export default function App() {
               <input
                 type="text"
                 value={form.mkoa}
-                onChange={(e) => updateField("mkoa", e.target.value)}
+                onChange={(e) =>
+                  updateField("mkoa", e.target.value)
+                }
                 placeholder="Mfano: Mwanza"
                 required
               />
@@ -496,7 +490,6 @@ export default function App() {
                   checked={form.aina_ushiriki.includes(item)}
                   onChange={() => toggleUshiriki(item)}
                 />
-
                 <span>{item}</span>
               </label>
             ))}
@@ -722,239 +715,6 @@ export default function App() {
       <footer>
         <strong>Mwanza Cherehani Festival 2026</strong>
         <span>WhatsApp: +255 773 576 581</span>
-        <span>cherehanifestival2026@gmail.com</span>
-      </footer>
-    </main>
-  );
-}                  onChange={() => toggleUshiriki(item)}
-                />
-
-                <span>{item}</span>
-              </label>
-            ))}
-          </div>
-
-          {form.aina_ushiriki.includes("Nyingine") && (
-            <label className="full-field">
-              Eleza aina nyingine ya ushiriki
-              <input
-                type="text"
-                value={form.aina_ushiriki_nyingine}
-                onChange={(e) =>
-                  updateField(
-                    "aina_ushiriki_nyingine",
-                    e.target.value
-                  )
-                }
-                placeholder="Andika hapa"
-              />
-            </label>
-          )}
-        </section>
-
-        <section className="form-section">
-          <div className="section-number">3</div>
-
-          <div>
-            <h2>Bidhaa / Huduma</h2>
-            <p>
-              Eleza bidhaa au huduma utakazoonyesha au kuuza.
-            </p>
-          </div>
-
-          <label className="full-field">
-            Maelezo ya Bidhaa/Huduma *
-            <textarea
-              rows="5"
-              value={form.maelezo_bidhaa_huduma}
-              onChange={(e) =>
-                updateField(
-                  "maelezo_bidhaa_huduma",
-                  e.target.value
-                )
-              }
-              placeholder="Mfano: Nguo za kike, sare, mikoba, viatu..."
-              required
-            />
-          </label>
-        </section>
-
-        <section className="form-section">
-          <div className="section-number">4</div>
-
-          <div>
-            <h2>Mahitaji ya Eneo la Maonyesho</h2>
-            <p>Tuambie mahitaji yako muhimu.</p>
-          </div>
-
-          <div className="grid">
-            <label>
-              Idadi ya Meza
-              <input
-                type="number"
-                min="0"
-                value={form.idadi_meza}
-                onChange={(e) =>
-                  updateField("idadi_meza", e.target.value)
-                }
-              />
-            </label>
-
-            <label>
-              Idadi ya Viti
-              <input
-                type="number"
-                min="0"
-                value={form.idadi_viti}
-                onChange={(e) =>
-                  updateField("idadi_viti", e.target.value)
-                }
-              />
-            </label>
-          </div>
-
-          <div className="needs-grid">
-            <label className="checkbox-card">
-              <input
-                type="checkbox"
-                checked={form.umeme}
-                onChange={(e) =>
-                  updateField("umeme", e.target.checked)
-                }
-              />
-              <span>Umeme</span>
-            </label>
-
-            <label className="checkbox-card">
-              <input
-                type="checkbox"
-                checked={form.tenti}
-                onChange={(e) =>
-                  updateField("tenti", e.target.checked)
-                }
-              />
-              <span>Tenti</span>
-            </label>
-
-            <label className="checkbox-card">
-              <input
-                type="checkbox"
-                checked={form.maji}
-                onChange={(e) =>
-                  updateField("maji", e.target.checked)
-                }
-              />
-              <span>Maji</span>
-            </label>
-          </div>
-
-          <label className="full-field">
-            Mahitaji Mengine
-            <textarea
-              rows="3"
-              value={form.mahitaji_mengine}
-              onChange={(e) =>
-                updateField("mahitaji_mengine", e.target.value)
-              }
-              placeholder="Eleza mahitaji mengine kama yapo"
-            />
-          </label>
-        </section>
-
-        <section className="form-section">
-          <div className="section-number">5</div>
-
-          <div>
-            <h2>Muda wa Ushiriki</h2>
-          </div>
-
-          <div className="radio-group">
-            <label className="checkbox-card">
-              <input
-                type="radio"
-                name="muda"
-                value="Siku"
-                checked={form.muda_ushiriki === "Siku"}
-                onChange={(e) =>
-                  updateField("muda_ushiriki", e.target.value)
-                }
-              />
-              <span>Siku Maalum</span>
-            </label>
-
-            <label className="checkbox-card">
-              <input
-                type="radio"
-                name="muda"
-                value="Siku zote za Festival"
-                checked={
-                  form.muda_ushiriki === "Siku zote za Festival"
-                }
-                onChange={(e) =>
-                  updateField("muda_ushiriki", e.target.value)
-                }
-              />
-              <span>Siku Zote za Festival</span>
-            </label>
-          </div>
-        </section>
-
-        <section className="form-section declaration">
-          <div className="section-number">6</div>
-
-          <div>
-            <h2>Tamko</h2>
-          </div>
-
-          <label className="declaration-check">
-            <input
-              type="checkbox"
-              checked={form.amekubali_tamko}
-              onChange={(e) =>
-                updateField("amekubali_tamko", e.target.checked)
-              }
-            />
-
-            <span>
-              Ninathibitisha kwamba taarifa nilizotoa ni sahihi na
-              nitafuata sheria na taratibu za Mwanza Cherehani
-              Festival 2026.
-            </span>
-          </label>
-        </section>
-
-        <div className="payment-message">
-          <strong>Maelekezo ya Malipo</strong>
-
-          <p>
-            Hakuna malipo yanayofanyika kupitia fomu hii. Baada ya
-            usajili wako kupokelewa na kuhakikiwa, Kamati itawasiliana
-            nawe moja kwa moja na kukupa maelekezo rasmi ya malipo.
-          </p>
-        </div>
-
-        {error && <div className="error-message">{error}</div>}
-
-        <button
-          className="submit-button"
-          type="submit"
-          disabled={loading}
-        >
-          {loading ? "Inatuma Usajili..." : "TUMA USAJILI"}
-        </button>
-
-        <p className="privacy-text">
-          Taarifa utakazowasilisha zitatunzwa kwa usiri na
-          zitatumika kwa shughuli za Mwanza Cherehani Festival 2026
-          pekee.
-        </p>
-      </form>
-
-      <footer>
-        <strong>Mwanza Cherehani Festival 2026</strong>
-
-        <span>WhatsApp: +255 773 576 581</span>
-
         <span>cherehanifestival2026@gmail.com</span>
       </footer>
     </main>
