@@ -1,0 +1,364 @@
+:root {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1f2937;
+  background: #f3f4f6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top, rgba(20, 83, 45, 0.08), transparent 30%),
+    #f3f4f6;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.page {
+  min-height: 100vh;
+}
+
+.hero {
+  background: linear-gradient(135deg, #14532d, #166534);
+  color: white;
+  padding: 42px 20px 34px;
+  text-align: center;
+}
+
+.hero-badge {
+  display: inline-block;
+  background: #facc15;
+  color: #422006;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 12px;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+}
+
+.hero h1 {
+  margin: 18px auto 8px;
+  max-width: 800px;
+  font-size: clamp(28px, 5vw, 48px);
+  line-height: 1.05;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.event-info {
+  max-width: 850px;
+  margin: 24px auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.event-info span {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.18);
+  padding: 10px 13px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.form-card {
+  width: min(920px, calc(100% - 28px));
+  margin: -18px auto 40px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.form-section {
+  padding: 28px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.form-section h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #14532d;
+}
+
+.form-section p {
+  margin-top: 5px;
+  color: #6b7280;
+}
+
+.section-number {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #166534;
+  color: white;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-weight: 700;
+  color: #374151;
+}
+
+input,
+textarea {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  outline: none;
+  transition: 0.2s ease;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+}
+
+textarea {
+  resize: vertical;
+}
+
+.checkbox-grid,
+.needs-grid,
+.radio-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.checkbox-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 11px;
+  cursor: pointer;
+  background: #fafafa;
+}
+
+.checkbox-card input {
+  width: 18px;
+  height: 18px;
+  accent-color: #166534;
+}
+
+.full-field {
+  margin-top: 18px;
+}
+
+.declaration-check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+}
+
+.declaration-check input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: #166534;
+}
+
+.payment-message {
+  margin: 24px 28px 0;
+  padding: 18px;
+  border-radius: 12px;
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  color: #713f12;
+}
+
+.payment-message p {
+  margin-bottom: 0;
+  line-height: 1.6;
+}
+
+.error-message {
+  margin: 18px 28px 0;
+  padding: 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.submit-button {
+  display: block;
+  width: calc(100% - 56px);
+  margin: 24px auto 12px;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  background: #166534;
+  color: white;
+  font-weight: 800;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.submit-button:hover {
+  background: #14532d;
+}
+
+.submit-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.privacy-text {
+  padding: 0 28px 28px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.success-card {
+  width: min(650px, calc(100% - 28px));
+  margin: 60px auto;
+  background: white;
+  padding: 38px 28px;
+  border-radius: 20px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.1);
+}
+
+.success-icon {
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 38px;
+  font-weight: 900;
+}
+
+.success-card h1 {
+  color: #14532d;
+}
+
+.success-card p {
+  line-height: 1.65;
+}
+
+.notice {
+  margin: 20px 0;
+  padding: 15px;
+  border-radius: 10px;
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  color: #713f12;
+}
+
+.whatsapp-button,
+.secondary-button {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-weight: 800;
+  text-decoration: none;
+  margin-top: 12px;
+  cursor: pointer;
+}
+
+.whatsapp-button {
+  background: #15803d;
+  color: white;
+}
+
+.secondary-button {
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #374151;
+}
+
+footer {
+  padding: 28px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  color: #6b7280;
+}
+
+footer strong {
+  color: #14532d;
+}
+
+@media (max-width: 700px) {
+  .hero {
+    padding-top: 30px;
+  }
+
+  .form-card {
+    width: calc(100% - 18px);
+    border-radius: 15px;
+  }
+
+  .form-section {
+    padding: 22px 18px;
+  }
+
+  .grid,
+  .checkbox-grid,
+  .needs-grid,
+  .radio-group {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-message {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+
+  .submit-button {
+    width: calc(100% - 36px);
+  }
+
+  .privacy-text {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+}
