@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
-import Admin from "./Admin.jsx";
+import Admin from "./src/Admin.jsx";
 import "./index.css";
 
 const path = window.location.pathname;
