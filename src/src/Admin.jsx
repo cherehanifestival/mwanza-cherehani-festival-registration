@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import QrScanner from "qr-scanner";
 
 /* =========================================================
    SUPABASE
@@ -741,8 +742,7 @@ export default function Admin() {
     useState("");
 
   const videoRef = useRef(null);
-  const cameraStreamRef = useRef(null);
-  const cameraTimerRef = useRef(null);
+  const cameraScannerRef = useRef(null);
   const scannerBusyRef = useRef(false);
 
   const [ticketEditor, setTicketEditor] =
@@ -2265,19 +2265,22 @@ export default function Admin() {
   }
 
   function stopCameraScanner() {
-    if (cameraTimerRef.current) {
-      clearTimeout(cameraTimerRef.current);
-      cameraTimerRef.current = null;
-    }
+    if (cameraScannerRef.current) {
+      try {
+        cameraScannerRef.current.stop();
+        cameraScannerRef.current.destroy();
+      } catch (scannerStopError) {
+        console.warn(
+          "QR scanner cleanup warning:",
+          scannerStopError
+        );
+      }
 
-    if (cameraStreamRef.current) {
-      cameraStreamRef.current
-        .getTracks()
-        .forEach((track) => track.stop());
-      cameraStreamRef.current = null;
+      cameraScannerRef.current = null;
     }
 
     if (videoRef.current) {
+      videoRef.current.pause?.();
       videoRef.current.srcObject = null;
     }
 
@@ -2288,85 +2291,123 @@ export default function Admin() {
     setCameraError("");
     setScanResult(null);
 
-    if (!("BarcodeDetector" in window)) {
+    if (!navigator.mediaDevices?.getUserMedia) {
       setCameraError(
-        "Browser hii haina QR camera scanner ya moja kwa moja. Tumia Chrome/Edge ya kisasa au paste QR token."
+        "Camera haipatikani kwenye browser hii. Tumia Chrome/Edge/Safari ya kisasa au paste QR token."
       );
       return;
     }
 
-    if (!navigator.mediaDevices?.getUserMedia) {
+    if (!window.isSecureContext) {
       setCameraError(
-        "Camera haipatikani kwenye browser hii."
+        "Camera scanner inahitaji HTTPS. Fungua tovuti kupitia https://leahfashion.co.tz/admin."
       );
       return;
     }
 
     try {
-      const supported =
-        await window.BarcodeDetector.getSupportedFormats?.();
+      stopCameraScanner();
 
-      if (supported && !supported.includes("qr_code")) {
-        throw new Error("QR format is not supported by this browser.");
+      const hasCamera = await QrScanner.hasCamera();
+
+      if (!hasCamera) {
+        throw new Error(
+          "Hakuna camera iliyopatikana kwenye kifaa hiki."
+        );
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
-
-      cameraStreamRef.current = stream;
+      // React needs one paint cycle before the <video> ref exists.
       setCameraActive(true);
 
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      });
+      await new Promise((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(resolve)
+        )
+      );
 
-      const detector = new window.BarcodeDetector({
-        formats: ["qr_code"],
-      });
+      if (!videoRef.current) {
+        throw new Error(
+          "Video scanner haijawa tayari. Jaribu tena."
+        );
+      }
 
-      const scanFrame = async () => {
-        if (!cameraStreamRef.current || !videoRef.current) return;
+      const scanner = new QrScanner(
+        videoRef.current,
+        async (result) => {
+          const value =
+            typeof result === "string"
+              ? result
+              : result?.data;
 
-        try {
-          if (
-            videoRef.current.readyState >= 2 &&
-            !scannerBusyRef.current
-          ) {
-            const codes = await detector.detect(videoRef.current);
-            const value = codes?.[0]?.rawValue;
-
-            if (value) {
-              setQrToken(value);
-              await processQrToken(value);
-              return;
-            }
+          if (!value || scannerBusyRef.current) {
+            return;
           }
-        } catch (detectError) {
-          console.error(detectError);
+
+          scannerBusyRef.current = true;
+
+          try {
+            // Stop immediately after a successful decode so the same QR
+            // cannot be submitted repeatedly while the backend responds.
+            stopCameraScanner();
+            setQrToken(value);
+            await processQrToken(value);
+          } finally {
+            scannerBusyRef.current = false;
+          }
+        },
+        {
+          preferredCamera: "environment",
+          maxScansPerSecond: 8,
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          returnDetailedScanResult: true,
+          onDecodeError: () => {},
         }
+      );
 
-        cameraTimerRef.current = setTimeout(scanFrame, 350);
-      };
-
-      cameraTimerRef.current = setTimeout(scanFrame, 500);
+      cameraScannerRef.current = scanner;
+      await scanner.start();
+      setCameraActive(true);
     } catch (cameraStartError) {
       console.error(cameraStartError);
       stopCameraScanner();
-      setCameraError(
-        cameraStartError?.name === "NotAllowedError"
-          ? "Ruhusa ya camera imekataliwa. Ruhusu camera kwenye browser kisha jaribu tena."
-          : cameraStartError?.message ||
-              "Imeshindikana kuwasha QR camera scanner."
-      );
+
+      const errorName = cameraStartError?.name || "";
+      const errorMessage =
+        cameraStartError?.message ||
+        String(cameraStartError || "");
+
+      if (
+        errorName === "NotAllowedError" ||
+        /permission|denied|notallowed/i.test(errorMessage)
+      ) {
+        setCameraError(
+          "Ruhusa ya camera imekataliwa. Bonyeza alama ya lock/camera kwenye address bar, ruhusu Camera, kisha jaribu tena."
+        );
+      } else if (
+        errorName === "NotFoundError" ||
+        /no camera|not found|hakuna camera/i.test(
+          errorMessage
+        )
+      ) {
+        setCameraError(
+          "Hakuna camera iliyopatikana kwenye kifaa hiki."
+        );
+      } else if (
+        errorName === "NotReadableError" ||
+        /could not start|not readable|in use/i.test(
+          errorMessage
+        )
+      ) {
+        setCameraError(
+          "Camera inatumika na app nyingine. Funga app nyingine inayotumia camera kisha jaribu tena."
+        );
+      } else {
+        setCameraError(
+          errorMessage ||
+            "Imeshindikana kuwasha QR camera scanner."
+        );
+      }
     }
   }
 
