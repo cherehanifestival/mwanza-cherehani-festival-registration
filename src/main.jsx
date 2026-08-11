@@ -2,12 +2,19 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import Admin from "./src/Admin.jsx";
+import Agent from "./src/Agent.jsx";
 import "./index.css";
 
 const path = window.location.pathname;
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {path === "/admin" ? <Admin /> : <App />}
+    {path === "/admin" ? (
+  <Admin />
+) : path === "/agent" ? (
+  <Agent />
+) : (
+  <App />
+)}
   </React.StrictMode>
 );
