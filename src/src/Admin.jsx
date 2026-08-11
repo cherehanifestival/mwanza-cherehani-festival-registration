@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================================================
@@ -160,6 +160,430 @@ function normalizeQrToken(value = "") {
 }
 
 /* =========================================================
+   LOCAL QR GENERATOR
+   Version 3-L QR, byte mode. Generated fully in-browser so
+   ticket tokens are never sent to an external QR service.
+========================================================= */
+
+function createQrMatrix(text) {
+  const version = 3;
+  const size = 17 + 4 * version;
+  const dataCodewords = 55;
+  const eccLength = 15;
+  const payload = Array.from(
+    new TextEncoder().encode(String(text || ""))
+  );
+
+  if (payload.length > 53) {
+    throw new Error("QR token is too long for the local encoder.");
+  }
+
+  const bits = [];
+  const pushBits = (value, length) => {
+    for (let i = length - 1; i >= 0; i -= 1) {
+      bits.push((value >>> i) & 1);
+    }
+  };
+
+  pushBits(0b0100, 4);
+  pushBits(payload.length, 8);
+  payload.forEach((byte) => pushBits(byte, 8));
+
+  const capacity = dataCodewords * 8;
+  for (
+    let i = 0;
+    i < Math.min(4, capacity - bits.length);
+    i += 1
+  ) {
+    bits.push(0);
+  }
+
+  while (bits.length % 8) bits.push(0);
+
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) {
+    let value = 0;
+    for (let j = 0; j < 8; j += 1) {
+      value = (value << 1) | (bits[i + j] || 0);
+    }
+    data.push(value);
+  }
+
+  let padIndex = 0;
+  while (data.length < dataCodewords) {
+    data.push(padIndex++ % 2 ? 0x11 : 0xec);
+  }
+
+  function gfMultiply(x, y) {
+    let z = 0;
+    for (let i = 7; i >= 0; i -= 1) {
+      z = (z << 1) ^ ((z >>> 7) * 0x11d);
+      if ((y >>> i) & 1) z ^= x;
+    }
+    return z & 0xff;
+  }
+
+  function reedSolomonDivisor(degree) {
+    const result = new Array(degree).fill(0);
+    result[degree - 1] = 1;
+    let root = 1;
+
+    for (let i = 0; i < degree; i += 1) {
+      for (let j = 0; j < degree; j += 1) {
+        result[j] =
+          gfMultiply(result[j], root) ^
+          (j + 1 < degree ? result[j + 1] : 0);
+      }
+      root = gfMultiply(root, 2);
+    }
+
+    return result;
+  }
+
+  function reedSolomonRemainder(bytes, divisor) {
+    const result = new Array(divisor.length).fill(0);
+
+    bytes.forEach((byte) => {
+      const factor = byte ^ result.shift();
+      result.push(0);
+      for (let i = 0; i < result.length; i += 1) {
+        result[i] ^= gfMultiply(divisor[i], factor);
+      }
+    });
+
+    return result;
+  }
+
+  const codewords = data.concat(
+    reedSolomonRemainder(
+      data,
+      reedSolomonDivisor(eccLength)
+    )
+  );
+
+  const modules = Array.from({ length: size }, () =>
+    Array(size).fill(false)
+  );
+  const functionModules = Array.from({ length: size }, () =>
+    Array(size).fill(false)
+  );
+
+  const setFunction = (x, y, dark) => {
+    if (x >= 0 && y >= 0 && x < size && y < size) {
+      modules[y][x] = Boolean(dark);
+      functionModules[y][x] = true;
+    }
+  };
+
+  function drawFinder(cx, cy) {
+    for (let dy = -4; dy <= 4; dy += 1) {
+      for (let dx = -4; dx <= 4; dx += 1) {
+        const distance = Math.max(Math.abs(dx), Math.abs(dy));
+        setFunction(
+          cx + dx,
+          cy + dy,
+          distance !== 2 && distance !== 4
+        );
+      }
+    }
+  }
+
+  drawFinder(3, 3);
+  drawFinder(size - 4, 3);
+  drawFinder(3, size - 4);
+
+  for (let i = 0; i < size; i += 1) {
+    if (!functionModules[6][i]) {
+      setFunction(i, 6, i % 2 === 0);
+    }
+    if (!functionModules[i][6]) {
+      setFunction(6, i, i % 2 === 0);
+    }
+  }
+
+  // Version 3 alignment pattern center.
+  for (let dy = -2; dy <= 2; dy += 1) {
+    for (let dx = -2; dx <= 2; dx += 1) {
+      setFunction(
+        22 + dx,
+        22 + dy,
+        Math.max(Math.abs(dx), Math.abs(dy)) !== 1
+      );
+    }
+  }
+
+  setFunction(8, size - 8, true);
+
+  for (let i = 0; i < 9; i += 1) {
+    if (i !== 6) {
+      setFunction(8, i, false);
+      setFunction(i, 8, false);
+    }
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    setFunction(size - 1 - i, 8, false);
+    setFunction(8, size - 1 - i, false);
+  }
+
+  const dataBits = [];
+  codewords.forEach((byte) => {
+    for (let i = 7; i >= 0; i -= 1) {
+      dataBits.push((byte >>> i) & 1);
+    }
+  });
+
+  let dataIndex = 0;
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right -= 1;
+
+    for (let vertical = 0; vertical < size; vertical += 1) {
+      for (let j = 0; j < 2; j += 1) {
+        const x = right - j;
+        const upward = ((right + 1) & 2) === 0;
+        const y = upward ? size - 1 - vertical : vertical;
+
+        if (!functionModules[y][x]) {
+          modules[y][x] = Boolean(
+            dataIndex < dataBits.length
+              ? dataBits[dataIndex]
+              : 0
+          );
+          dataIndex += 1;
+        }
+      }
+    }
+  }
+
+  const maskFunctions = [
+    (x, y) => (x + y) % 2 === 0,
+    (_x, y) => y % 2 === 0,
+    (x) => x % 3 === 0,
+    (x, y) => (x + y) % 3 === 0,
+    (x, y) =>
+      (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0,
+    (x, y) => ((x * y) % 2 + (x * y) % 3) === 0,
+    (x, y) => (((x * y) % 2 + (x * y) % 3) % 2) === 0,
+    (x, y) => (((x + y) % 2 + (x * y) % 3) % 2) === 0,
+  ];
+
+  function formatBits(mask) {
+    // Error correction level L = 01.
+    const formatData = (1 << 3) | mask;
+    let remainder = formatData << 10;
+    const generator = 0x537;
+
+    for (let i = 14; i >= 10; i -= 1) {
+      if ((remainder >>> i) & 1) {
+        remainder ^= generator << (i - 10);
+      }
+    }
+
+    return ((formatData << 10) | remainder) ^ 0x5412;
+  }
+
+  function drawFormat(matrix, mask) {
+    const value = formatBits(mask);
+    const first = [
+      [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5],
+      [8, 7], [8, 8], [7, 8], [5, 8], [4, 8], [3, 8],
+      [2, 8], [1, 8], [0, 8],
+    ];
+    const second = [
+      [size - 1, 8], [size - 2, 8], [size - 3, 8],
+      [size - 4, 8], [size - 5, 8], [size - 6, 8],
+      [size - 7, 8], [size - 8, 8], [8, size - 7],
+      [8, size - 6], [8, size - 5], [8, size - 4],
+      [8, size - 3], [8, size - 2], [8, size - 1],
+    ];
+
+    for (let i = 0; i < 15; i += 1) {
+      const bit = Boolean((value >>> i) & 1);
+      const [x1, y1] = first[i];
+      const [x2, y2] = second[i];
+      matrix[y1][x1] = bit;
+      matrix[y2][x2] = bit;
+    }
+
+    matrix[size - 8][8] = true;
+  }
+
+  function penalty(matrix) {
+    let score = 0;
+
+    for (let y = 0; y < size; y += 1) {
+      let color = matrix[y][0];
+      let run = 1;
+      for (let x = 1; x < size; x += 1) {
+        if (matrix[y][x] === color) {
+          run += 1;
+          if (run === 5) score += 3;
+          else if (run > 5) score += 1;
+        } else {
+          color = matrix[y][x];
+          run = 1;
+        }
+      }
+    }
+
+    for (let x = 0; x < size; x += 1) {
+      let color = matrix[0][x];
+      let run = 1;
+      for (let y = 1; y < size; y += 1) {
+        if (matrix[y][x] === color) {
+          run += 1;
+          if (run === 5) score += 3;
+          else if (run > 5) score += 1;
+        } else {
+          color = matrix[y][x];
+          run = 1;
+        }
+      }
+    }
+
+    for (let y = 0; y < size - 1; y += 1) {
+      for (let x = 0; x < size - 1; x += 1) {
+        const color = matrix[y][x];
+        if (
+          matrix[y][x + 1] === color &&
+          matrix[y + 1][x] === color &&
+          matrix[y + 1][x + 1] === color
+        ) {
+          score += 3;
+        }
+      }
+    }
+
+    const patternA = [
+      true, false, true, true, true, false, true,
+      false, false, false, false,
+    ];
+    const patternB = [
+      false, false, false, false, true, false, true,
+      true, true, false, true,
+    ];
+
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x <= size - 11; x += 1) {
+        let a = true;
+        let b = true;
+        for (let i = 0; i < 11; i += 1) {
+          if (matrix[y][x + i] !== patternA[i]) a = false;
+          if (matrix[y][x + i] !== patternB[i]) b = false;
+        }
+        if (a || b) score += 40;
+      }
+    }
+
+    for (let x = 0; x < size; x += 1) {
+      for (let y = 0; y <= size - 11; y += 1) {
+        let a = true;
+        let b = true;
+        for (let i = 0; i < 11; i += 1) {
+          if (matrix[y + i][x] !== patternA[i]) a = false;
+          if (matrix[y + i][x] !== patternB[i]) b = false;
+        }
+        if (a || b) score += 40;
+      }
+    }
+
+    let dark = 0;
+    matrix.forEach((row) =>
+      row.forEach((cell) => {
+        if (cell) dark += 1;
+      })
+    );
+
+    score +=
+      Math.floor(
+        Math.abs(dark * 20 - size * size * 10) /
+          (size * size)
+      ) * 10;
+
+    return score;
+  }
+
+  let bestMatrix = null;
+  let bestPenalty = Infinity;
+
+  for (let mask = 0; mask < 8; mask += 1) {
+    const candidate = modules.map((row) => row.slice());
+
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        if (
+          !functionModules[y][x] &&
+          maskFunctions[mask](x, y)
+        ) {
+          candidate[y][x] = !candidate[y][x];
+        }
+      }
+    }
+
+    drawFormat(candidate, mask);
+    const score = penalty(candidate);
+
+    if (score < bestPenalty) {
+      bestPenalty = score;
+      bestMatrix = candidate;
+    }
+  }
+
+  return bestMatrix;
+}
+
+function QrCode({ value, size = 250 }) {
+  const matrix = useMemo(() => createQrMatrix(value), [value]);
+  const quiet = 4;
+  const dimension = matrix.length + quiet * 2;
+
+  return (
+    <svg
+      className="ticket-qr-svg"
+      viewBox={`0 0 ${dimension} ${dimension}`}
+      width={size}
+      height={size}
+      role="img"
+      aria-label="Ticket QR code"
+      shapeRendering="crispEdges"
+    >
+      <rect width="100%" height="100%" fill="#ffffff" />
+      {matrix.map((row, y) =>
+        row.map((dark, x) =>
+          dark ? (
+            <rect
+              key={`${x}-${y}`}
+              x={x + quiet}
+              y={y + quiet}
+              width="1"
+              height="1"
+              fill="#000000"
+            />
+          ) : null
+        )
+      )}
+    </svg>
+  );
+}
+
+function qrSvgString(value) {
+  const matrix = createQrMatrix(value);
+  const quiet = 4;
+  const dimension = matrix.length + quiet * 2;
+  let path = "";
+
+  matrix.forEach((row, y) => {
+    row.forEach((dark, x) => {
+      if (dark) {
+        path += `M${x + quiet},${y + quiet}h1v1h-1z`;
+      }
+    });
+  });
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dimension} ${dimension}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="white"/><path d="${path}" fill="black"/></svg>`;
+}
+
+/* =========================================================
    ADMIN COMPONENT
 ========================================================= */
 
@@ -310,6 +734,20 @@ export default function Admin() {
   const [scanResult, setScanResult] =
     useState(null);
 
+  const [cameraActive, setCameraActive] =
+    useState(false);
+
+  const [cameraError, setCameraError] =
+    useState("");
+
+  const videoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const cameraTimerRef = useRef(null);
+  const scannerBusyRef = useRef(false);
+
+  const [ticketEditor, setTicketEditor] =
+    useState(null);
+
   /* =========================================================
      SESSION INITIALIZATION
   ========================================================= */
@@ -342,6 +780,12 @@ export default function Admin() {
       loadEverything();
     }
   }, [session, adminReady]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraScanner();
+    };
+  }, []);
 
   async function initializeAuth() {
     setLoading(true);
@@ -1668,6 +2112,7 @@ export default function Admin() {
     status
   ) {
     const {
+      data: updatedTicket,
       error: updateError,
     } =
       await supabase
@@ -1675,60 +2120,118 @@ export default function Admin() {
         .update({
           ticket_status: status,
         })
-        .eq("id", ticket.id);
+        .eq("id", ticket.id)
+        .select("*")
+        .single();
 
     if (updateError) {
       alert(
         "Imeshindikana kubadilisha tiketi."
       );
 
-      return;
+      return false;
     }
 
     await loadTickets();
+
+    if (updatedTicket) {
+      setSelectedTicket(updatedTicket);
+    }
+
+    return true;
+  }
+
+  function openTicketEditor(ticket) {
+    setTicketEditor({
+      ticket,
+      ticket_status:
+        ticket.ticket_status || "active",
+    });
+  }
+
+  async function saveTicketEditor(event) {
+    event.preventDefault();
+
+    if (!ticketEditor?.ticket) return;
+
+    const ok = await updateTicketStatus(
+      ticketEditor.ticket,
+      ticketEditor.ticket_status
+    );
+
+    if (ok) {
+      setTicketEditor(null);
+    }
+  }
+
+  function downloadTicketQr(ticket) {
+    try {
+      const svg = qrSvgString(ticket.qr_token);
+      const blob = new Blob([svg], {
+        type: "image/svg+xml;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${ticket.ticket_number}-QR.svg`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      console.error(downloadError);
+      alert("Imeshindikana kupakua QR.");
+    }
+  }
+
+  function printTicket(ticket) {
+    const registration = getRegistration(
+      ticket.registration_id
+    );
+    const payment = getPaymentByRegistration(
+      ticket.registration_id
+    );
+    const qrSvg = qrSvgString(ticket.qr_token);
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+
+    if (!popup) {
+      alert("Ruhusu popups ili kuchapisha tiketi.");
+      return;
+    }
+
+    popup.document.write(`<!doctype html><html><head><title>${ticket.ticket_number}</title><style>body{font-family:Arial,sans-serif;background:#f3f4f6;margin:0;padding:30px}.card{max-width:720px;margin:auto;background:white;border:2px solid #0f5132;border-radius:22px;padding:32px;text-align:center}.brand{font-size:14px;font-weight:800;color:#166534}.number{font-size:34px;margin:10px 0}.qr{width:280px;margin:20px auto}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left}.item{background:#f8fafc;padding:12px;border-radius:10px}.item small{display:block;color:#64748b}.footer{margin-top:22px;font-size:12px;color:#64748b}@media print{body{background:white;padding:0}.card{border-color:#000}}</style></head><body><div class="card"><div class="brand">${FESTIVAL_NAME}</div><h1 class="number">${ticket.ticket_number}</h1><h2>${registration?.jina_kamili || "Mshiriki"}</h2><div class="qr">${qrSvg}</div><div class="grid"><div class="item"><small>Kifurushi</small><strong>${registration?.package_name || "—"}</strong></div><div class="item"><small>Malipo</small><strong>${payment?.payment_status === "verified" ? "Verified" : paymentStatusLabel(payment?.payment_status)}</strong></div><div class="item"><small>Status</small><strong>${ticket.ticket_status}</strong></div><div class="item"><small>Issued</small><strong>${formatDate(ticket.issued_at)}</strong></div></div><div class="footer">QR hii ni tiketi ya kuingia na inaweza kutumika mara moja tu.</div></div><script>window.onload=()=>window.print();<\/script></body></html>`);
+    popup.document.close();
   }
 
   /* =========================================================
      QR CHECK-IN
   ========================================================= */
 
-  async function checkInTicket(
-    event
-  ) {
-    event.preventDefault();
-
-    const token =
-      normalizeQrToken(qrToken);
+  async function processQrToken(tokenValue) {
+    const token = normalizeQrToken(tokenValue);
 
     if (!token) {
       setScanResult({
         success: false,
         result: "invalid",
-        message:
-          "Weka QR token kwanza.",
+        message: "Weka QR token kwanza.",
       });
-
       return;
     }
 
+    if (scannerBusyRef.current) return;
+
+    scannerBusyRef.current = true;
     setScanLoading(true);
     setScanResult(null);
 
     try {
-      const {
-        data,
-        error: scanError,
-      } =
-        await supabase.rpc(
-          "check_in_ticket",
-          {
-            p_qr_token: token,
-          }
-        );
+      const { data, error: scanError } =
+        await supabase.rpc("check_in_ticket", {
+          p_qr_token: token,
+        });
 
-      if (scanError) {
-        throw scanError;
-      }
+      if (scanError) throw scanError;
 
       setScanResult(data);
 
@@ -1739,10 +2242,10 @@ export default function Admin() {
 
       if (data?.success) {
         setQrToken("");
+        stopCameraScanner();
       }
     } catch (scanError) {
       console.error(scanError);
-
       setScanResult({
         success: false,
         result: "error",
@@ -1752,6 +2255,118 @@ export default function Admin() {
       });
     } finally {
       setScanLoading(false);
+      scannerBusyRef.current = false;
+    }
+  }
+
+  async function checkInTicket(event) {
+    event.preventDefault();
+    await processQrToken(qrToken);
+  }
+
+  function stopCameraScanner() {
+    if (cameraTimerRef.current) {
+      clearTimeout(cameraTimerRef.current);
+      cameraTimerRef.current = null;
+    }
+
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current
+        .getTracks()
+        .forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraActive(false);
+  }
+
+  async function startCameraScanner() {
+    setCameraError("");
+    setScanResult(null);
+
+    if (!("BarcodeDetector" in window)) {
+      setCameraError(
+        "Browser hii haina QR camera scanner ya moja kwa moja. Tumia Chrome/Edge ya kisasa au paste QR token."
+      );
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError(
+        "Camera haipatikani kwenye browser hii."
+      );
+      return;
+    }
+
+    try {
+      const supported =
+        await window.BarcodeDetector.getSupportedFormats?.();
+
+      if (supported && !supported.includes("qr_code")) {
+        throw new Error("QR format is not supported by this browser.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      cameraStreamRef.current = stream;
+      setCameraActive(true);
+
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      });
+
+      const detector = new window.BarcodeDetector({
+        formats: ["qr_code"],
+      });
+
+      const scanFrame = async () => {
+        if (!cameraStreamRef.current || !videoRef.current) return;
+
+        try {
+          if (
+            videoRef.current.readyState >= 2 &&
+            !scannerBusyRef.current
+          ) {
+            const codes = await detector.detect(videoRef.current);
+            const value = codes?.[0]?.rawValue;
+
+            if (value) {
+              setQrToken(value);
+              await processQrToken(value);
+              return;
+            }
+          }
+        } catch (detectError) {
+          console.error(detectError);
+        }
+
+        cameraTimerRef.current = setTimeout(scanFrame, 350);
+      };
+
+      cameraTimerRef.current = setTimeout(scanFrame, 500);
+    } catch (cameraStartError) {
+      console.error(cameraStartError);
+      stopCameraScanner();
+      setCameraError(
+        cameraStartError?.name === "NotAllowedError"
+          ? "Ruhusa ya camera imekataliwa. Ruhusu camera kwenye browser kisha jaribu tena."
+          : cameraStartError?.message ||
+              "Imeshindikana kuwasha QR camera scanner."
+      );
     }
   }
 
@@ -3498,12 +4113,54 @@ export default function Admin() {
                 </h2>
 
                 <p>
-                  Scan QR kwa scanner
+                  Scan QR kwa camera
                   au paste QR token.
                   Tiketi halali
                   itatumika mara moja
                   tu.
                 </p>
+
+                <div className="camera-actions">
+                  {!cameraActive ? (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={startCameraScanner}
+                    >
+                      📷 WASHAA CAMERA SCANNER
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={stopCameraScanner}
+                    >
+                      ZIMA CAMERA
+                    </button>
+                  )}
+                </div>
+
+                {cameraActive && (
+                  <div className="camera-scanner">
+                    <video
+                      ref={videoRef}
+                      muted
+                      playsInline
+                    />
+                    <div className="camera-guide">
+                      <span />
+                    </div>
+                    <small>
+                      Elekeza QR code ndani ya fremu.
+                    </small>
+                  </div>
+                )}
+
+                {cameraError && (
+                  <div className="camera-error">
+                    {cameraError}
+                  </div>
+                )}
 
                 <form
                   onSubmit={
@@ -4061,112 +4718,174 @@ export default function Admin() {
               setSelectedTicket(null)
             }
           >
-            <div className="ticket">
-              <div className="badge secure">
-                OFFICIAL TICKET
-              </div>
+            {(() => {
+              const registration = getRegistration(
+                selectedTicket.registration_id
+              );
+              const payment = getPaymentByRegistration(
+                selectedTicket.registration_id
+              );
 
-              <h1>
-                {
-                  selectedTicket.ticket_number
-                }
-              </h1>
+              return (
+                <div className="ticket ticket-premium">
+                  <div className="ticket-brand-row">
+                    <div>
+                      <span className="ticket-kicker">OFFICIAL ENTRY TICKET</span>
+                      <h2>{FESTIVAL_NAME}</h2>
+                    </div>
+                    <span
+                      className={`ticket-status-badge ${
+                        selectedTicket.ticket_status === "active"
+                          ? "is-active"
+                          : "is-revoked"
+                      }`}
+                    >
+                      {selectedTicket.ticket_status}
+                    </span>
+                  </div>
 
+                  <div className="ticket-main-grid">
+                    <div className="ticket-person">
+                      <small>TICKET NUMBER</small>
+                      <h1>{selectedTicket.ticket_number}</h1>
+
+                      <small>MSHIRIKI</small>
+                      <h3>{registration?.jina_kamili || "Mshiriki"}</h3>
+
+                      <div className="ticket-detail-grid">
+                        <Info
+                          label="Kifurushi"
+                          value={registration?.package_name || "—"}
+                        />
+                        <Info
+                          label="Bei"
+                          value={`TSh ${money(
+                            payment?.amount_due ??
+                              registration?.package_price
+                          )}`}
+                        />
+                        <Info
+                          label="Malipo"
+                          value={
+                            payment?.payment_status === "verified"
+                              ? "Verified"
+                              : paymentStatusLabel(payment?.payment_status)
+                          }
+                        />
+                        <Info
+                          label="Issued"
+                          value={formatDate(selectedTicket.issued_at)}
+                        />
+                        <Info
+                          label="Check-in"
+                          value={
+                            selectedTicket.checked_in_at
+                              ? formatDate(selectedTicket.checked_in_at)
+                              : "Bado"
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="ticket-qr-panel">
+                      <QrCode
+                        value={selectedTicket.qr_token}
+                        size={270}
+                      />
+                      <strong>SCAN TO CHECK IN</strong>
+                      <small>
+                        QR hii ni ya tiketi hii pekee na inaweza kutumika mara moja tu.
+                      </small>
+                    </div>
+                  </div>
+
+                  <div className="ticket-security-note">
+                    Secure token imefichwa. Tumia Copy QR Token tu kwa fallback ya scanner.
+                  </div>
+
+                  <div className="actions ticket-actions">
+                    <button
+                      onClick={() => printTicket(selectedTicket)}
+                    >
+                      🖨 Print / PDF
+                    </button>
+                    <button
+                      onClick={() => downloadTicketQr(selectedTicket)}
+                    >
+                      ↓ Pakua QR
+                    </button>
+                    <button
+                      onClick={() => copyTicketToken(selectedTicket)}
+                    >
+                      Copy QR Token
+                    </button>
+                    <button
+                      onClick={() => sendTicketSms(selectedTicket)}
+                    >
+                      Tuma SMS
+                    </button>
+                    <button
+                      onClick={() => sendTicketWhatsApp(selectedTicket)}
+                    >
+                      WhatsApp
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => openTicketEditor(selectedTicket)}
+                    >
+                      Hariri Tiketi
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </Modal>
+        )}
+
+        {ticketEditor && (
+          <Modal onClose={() => setTicketEditor(null)}>
+            <div className="ticket-editor">
+              <span className="ticket-kicker">SAFE TICKET EDITOR</span>
+              <h2>Hariri {ticketEditor.ticket.ticket_number}</h2>
               <p>
-                {getRegistration(
-                  selectedTicket.registration_id
-                )?.jina_kamili ||
-                  "Mshiriki"}
+                Kwa usalama, ticket number na QR token haziwezi kuhaririwa hapa.
               </p>
 
-              <div className="qr-token-box">
-                <small>
-                  SECURE QR TOKEN
-                </small>
-
-                <code>
-                  {
-                    selectedTicket.qr_token
-                  }
-                </code>
-              </div>
-
-              <div className="info-grid">
-                <Info
-                  label="Status"
-                  value={
-                    selectedTicket.ticket_status
-                  }
-                />
-
-                <Info
-                  label="Issued"
-                  value={formatDate(
-                    selectedTicket.issued_at
-                  )}
-                />
-
-                <Info
-                  label="Checked In"
-                  value={
-                    selectedTicket.checked_in_at
-                      ? formatDate(
-                          selectedTicket.checked_in_at
-                        )
-                      : "Bado"
-                  }
-                />
-              </div>
-
-              <div className="actions ticket-actions">
-                <button
-                  onClick={() =>
-                    copyTicketToken(
-                      selectedTicket
-                    )
-                  }
-                >
-                  Copy QR Token
-                </button>
-
-                <button
-                  onClick={() =>
-                    sendTicketSms(
-                      selectedTicket
-                    )
-                  }
-                >
-                  Tuma SMS
-                </button>
-
-                <button
-                  onClick={() =>
-                    sendTicketWhatsApp(
-                      selectedTicket
-                    )
-                  }
-                >
-                  WhatsApp
-                </button>
-
-                {selectedTicket.ticket_status ===
-                  "active" && (
-                  <button
-                    className="danger"
-                    onClick={() =>
-                      updateTicketStatus(
-                        selectedTicket,
-                        "revoked"
-                      )
+              <form onSubmit={saveTicketEditor}>
+                <Field label="Ticket Status">
+                  <select
+                    value={ticketEditor.ticket_status}
+                    onChange={(event) =>
+                      setTicketEditor({
+                        ...ticketEditor,
+                        ticket_status: event.target.value,
+                      })
                     }
                   >
-                    Revoke
-                  </button>
-                )}
-              </div>
+                    <option value="active">active</option>
+                    <option value="revoked">revoked</option>
+                  </select>
+                </Field>
+
+                <div className="locked-ticket-fields">
+                  <Info
+                    label="Ticket Number (locked)"
+                    value={ticketEditor.ticket.ticket_number}
+                  />
+                  <Info
+                    label="QR Token"
+                    value="•••••••••••••••••••• (locked)"
+                  />
+                </div>
+
+                <button className="primary wide">
+                  HIFADHI MABADILIKO
+                </button>
+              </form>
             </div>
           </Modal>
         )}
+
       </main>
     </>
   );
@@ -4993,6 +5712,195 @@ td select {
   margin-top: 20px;
 }
 
+
+.ticket-premium {
+  text-align: left;
+}
+
+.ticket-brand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ticket-brand-row h2 {
+  margin: 5px 0 0;
+}
+
+.ticket-kicker {
+  display: inline-block;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.ticket-status-badge {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ticket-status-badge.is-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.ticket-status-badge.is-revoked {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.ticket-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 28px;
+  padding: 24px 0;
+}
+
+.ticket-person > small {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.ticket-person h1 {
+  margin: 4px 0 22px;
+  font-size: 36px;
+}
+
+.ticket-person h3 {
+  margin: 4px 0 20px;
+  font-size: 24px;
+}
+
+.ticket-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ticket-qr-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d1fae5;
+  background: #f0fdf4;
+  border-radius: 18px;
+  padding: 18px;
+  text-align: center;
+}
+
+.ticket-qr-panel strong {
+  margin-top: 10px;
+  color: #14532d;
+}
+
+.ticket-qr-panel small {
+  margin-top: 6px;
+  color: #64748b;
+}
+
+.ticket-qr-svg {
+  max-width: 100%;
+  height: auto;
+  background: white;
+  border-radius: 12px;
+}
+
+.ticket-security-note {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.ticket-editor form {
+  margin-top: 18px;
+}
+
+.ticket-editor select {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+}
+
+.locked-ticket-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.camera-actions {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0 12px;
+}
+
+.camera-scanner {
+  position: relative;
+  max-width: 620px;
+  margin: 0 auto 18px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0b1f14;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+}
+
+.camera-scanner video {
+  display: block;
+  width: 100%;
+  min-height: 300px;
+  object-fit: cover;
+}
+
+.camera-guide {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.camera-guide span {
+  width: min(62%, 300px);
+  aspect-ratio: 1;
+  border: 3px solid #4ade80;
+  border-radius: 18px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.28);
+}
+
+.camera-scanner > small {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 12px;
+  color: white;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: 0 1px 3px black;
+}
+
+.camera-error {
+  max-width: 620px;
+  margin: 0 auto 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+}
+
 /* RESPONSIVE */
 
 @media (max-width: 1000px) {
@@ -5002,6 +5910,10 @@ td select {
 }
 
 @media (max-width: 800px) {
+  .ticket-main-grid {
+    grid-template-columns: 1fr;
+  }
+
   .header {
     flex-direction: column;
     align-items: flex-start;
@@ -5016,6 +5928,19 @@ td select {
 }
 
 @media (max-width: 600px) {
+  .ticket-brand-row {
+    flex-direction: column;
+  }
+
+  .ticket-detail-grid,
+  .locked-ticket-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-person h1 {
+    font-size: 28px;
+  }
+
   .stats,
   .money-grid,
   .cards-grid,
