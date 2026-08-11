@@ -58,10 +58,46 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [agentId, setAgentId] = useState(null);
 
   useEffect(() => {
     loadPackages();
+    detectAgent();
   }, []);
+
+  async function detectAgent() {
+    const params = new URLSearchParams(window.location.search);
+    const requestedAgentId = params.get("agent");
+
+    if (!requestedAgentId) {
+      setAgentId(null);
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.user || session.user.id !== requestedAgentId) {
+      setAgentId(null);
+      return;
+    }
+
+    const { data: agentData, error: agentError } = await supabase
+      .from("agents")
+      .select("id")
+      .eq("id", session.user.id)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (agentError || !agentData) {
+      console.error("Agent verification failed:", agentError);
+      setAgentId(null);
+      return;
+    }
+
+    setAgentId(agentData.id);
+  }
 
   async function loadPackages() {
     setPackagesLoading(true);
@@ -180,6 +216,7 @@ export default function App() {
           package_price: Number(selectedPackage.price),
           package_tent_size: selectedPackage.tent_size || null,
           package_vat_note: selectedPackage.vat_note || null,
+          agent_id: agentId,
         },
       ]);
 
@@ -192,20 +229,25 @@ export default function App() {
       );
       return;
     }
-try {
-  const { error: smsError } = await supabase.functions.invoke("send-sms", {
-    body: {
-      to: form.namba_simu.trim(),
-      message: `Asante ${form.jina_kamili.trim()}! Usajili wako wa Cherehani Festival 2026 umepokelewa. Tutakutumia taarifa muhimu kuhusu tamasha.`,
-    },
-  });
 
-  if (smsError) {
-    console.error("SMS error:", smsError);
-  }
-} catch (smsError) {
-  console.error("SMS sending failed:", smsError);
-}
+    try {
+      const { error: smsError } = await supabase.functions.invoke(
+        "send-sms",
+        {
+          body: {
+            to: form.namba_simu.trim(),
+            message: `Asante ${form.jina_kamili.trim()}! Usajili wako wa Cherehani Festival 2026 umepokelewa. Tutakutumia taarifa muhimu kuhusu tamasha.`,
+          },
+        }
+      );
+
+      if (smsError) {
+        console.error("SMS error:", smsError);
+      }
+    } catch (smsError) {
+      console.error("SMS sending failed:", smsError);
+    }
+
     setSuccess(true);
     setForm(initialForm);
 
@@ -395,6 +437,7 @@ try {
 
           <div>
             <h2>Chagua Kifurushi cha Ushiriki</h2>
+
             <p>
               Chagua kifurushi kinachoendana na aina ya biashara au
               taasisi yako.
@@ -531,6 +574,7 @@ try {
 
           <div>
             <h2>Bidhaa / Huduma</h2>
+
             <p>
               Eleza bidhaa au huduma utakazoonyesha au kuuza.
             </p>
