@@ -1,21 +1,48 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = "https://ruxcevsfunszrveqhgjm.supabase.co";
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+/* =========================================================
+   SUPABASE
+========================================================= */
 
-const ADMIN_EMAIL = "cherehanifestival2026@gmail.com";
+const supabaseUrl =
+  "https://ruxcevsfunszrveqhgjm.supabase.co";
+
+const supabaseKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const supabase = createClient(
+  supabaseUrl,
+  supabaseKey
+);
+
+/* =========================================================
+   ADMIN CONFIG
+========================================================= */
+
+const ADMIN_EMAIL =
+  "cherehanifestival2026@gmail.com";
+
+/* =========================================================
+   REGISTRATION STATUSES
+========================================================= */
 
 const statuses = [
   ["mpya", "Mpya"],
   ["imepitiwa", "Imepitiwa"],
   ["amewasiliana", "Amewasiliana"],
-  ["ametumiwa_malipo", "Ametumiwa Maelekezo ya Malipo"],
+  [
+    "ametumiwa_malipo",
+    "Ametumiwa Maelekezo ya Malipo",
+  ],
   ["amelipa", "Amelipa"],
   ["amethibitishwa", "Amethibitishwa"],
   ["amekataliwa", "Amekataliwa"],
 ];
+
+/* =========================================================
+   EMPTY PACKAGE
+========================================================= */
 
 const emptyPackage = {
   name: "",
@@ -30,33 +57,30 @@ const emptyPackage = {
   is_active: true,
 };
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function whatsappNumber(phone = "") {
-  let n = String(phone || "").replace(/\D/g, "");
+  let number = String(phone || "").replace(
+    /\D/g,
+    ""
+  );
 
-  if (n.startsWith("0")) {
-    n = "255" + n.substring(1);
+  if (number.startsWith("0")) {
+    number = "255" + number.substring(1);
   }
 
-  if (!n.startsWith("255")) {
-    n = "255" + n;
+  if (!number.startsWith("255")) {
+    number = "255" + number;
   }
 
-  return n;
+  return number;
 }
 
 function money(value) {
-  return new Intl.NumberFormat("sw-TZ").format(Number(value || 0));
-}
-
-function sameDay(dateValue, compareDate = new Date()) {
-  if (!dateValue) return false;
-
-  const date = new Date(dateValue);
-
-  return (
-    date.getFullYear() === compareDate.getFullYear() &&
-    date.getMonth() === compareDate.getMonth() &&
-    date.getDate() === compareDate.getDate()
+  return new Intl.NumberFormat("sw-TZ").format(
+    Number(value || 0)
   );
 }
 
@@ -64,281 +88,1005 @@ function formatDate(value) {
   if (!value) return "—";
 
   try {
-    return new Date(value).toLocaleDateString("sw-TZ");
+    return new Date(value).toLocaleDateString(
+      "sw-TZ",
+      {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }
+    );
   } catch {
     return "—";
   }
 }
 
+function sameDay(
+  dateValue,
+  compareDate = new Date()
+) {
+  if (!dateValue) return false;
+
+  const date = new Date(dateValue);
+
+  return (
+    date.getFullYear() ===
+      compareDate.getFullYear() &&
+    date.getMonth() ===
+      compareDate.getMonth() &&
+    date.getDate() ===
+      compareDate.getDate()
+  );
+}
+
+function statusLabel(value) {
+  return (
+    statuses.find(
+      ([status]) => status === value
+    )?.[1] || "Mpya"
+  );
+}
+
+/* =========================================================
+   ADMIN COMPONENT
+========================================================= */
+
 export default function Admin() {
-  const [session, setSession] = useState(null);
+  /* =======================================================
+     AUTH
+  ======================================================= */
 
-  const [email, setEmail] = useState(ADMIN_EMAIL);
-  const [password, setPassword] = useState("");
+  const [session, setSession] =
+    useState(null);
 
-  const [tab, setTab] = useState("registrations");
+  const [email, setEmail] =
+    useState(ADMIN_EMAIL);
 
-  const [registrations, setRegistrations] = useState([]);
-  const [packages, setPackages] = useState([]);
-  const [agents, setAgents] = useState([]);
+  const [password, setPassword] =
+    useState("");
 
-  const [loading, setLoading] = useState(true);
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [dataLoading, setDataLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [loading, setLoading] =
+    useState(true);
 
-  const [selected, setSelected] = useState(null);
-  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [loginLoading, setLoginLoading] =
+    useState(false);
 
-  const [search, setSearch] = useState("");
-  const [agentSearch, setAgentSearch] = useState("");
+  /* =======================================================
+     MFA
+  ======================================================= */
 
-  const [packageForm, setPackageForm] = useState(emptyPackage);
-  const [editingPackageId, setEditingPackageId] = useState(null);
-  const [savingPackage, setSavingPackage] = useState(false);
+  const [adminReady, setAdminReady] =
+    useState(false);
+
+  const [mfaStage, setMfaStage] =
+    useState("none");
+
+  const [mfaFactorId, setMfaFactorId] =
+    useState("");
+
+  const [mfaCode, setMfaCode] =
+    useState("");
+
+  const [mfaQrCode, setMfaQrCode] =
+    useState("");
+
+  const [mfaSecret, setMfaSecret] =
+    useState("");
+
+  const [mfaLoading, setMfaLoading] =
+    useState(false);
+
+  /* =======================================================
+     DATA
+  ======================================================= */
+
+  const [registrations, setRegistrations] =
+    useState([]);
+
+  const [agents, setAgents] =
+    useState([]);
+
+  const [packages, setPackages] =
+    useState([]);
+
+  const [dataLoading, setDataLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  /* =======================================================
+     NAVIGATION
+  ======================================================= */
+
+  const [tab, setTab] =
+    useState("registrations");
+
+  /* =======================================================
+     SEARCH
+  ======================================================= */
+
+  const [search, setSearch] =
+    useState("");
+
+  const [agentSearch, setAgentSearch] =
+    useState("");
+
+  /* =======================================================
+     MODALS
+  ======================================================= */
+
+  const [selectedRegistration, setSelectedRegistration] =
+    useState(null);
+
+  const [selectedAgent, setSelectedAgent] =
+    useState(null);
+
+  /* =======================================================
+     PACKAGE FORM
+  ======================================================= */
+
+  const [packageForm, setPackageForm] =
+    useState(emptyPackage);
+
+  const [
+    editingPackageId,
+    setEditingPackageId,
+  ] = useState(null);
+
+  const [
+    savingPackage,
+    setSavingPackage,
+  ] = useState(false);
+
+  /* =======================================================
+     INITIAL SESSION
+  ======================================================= */
 
   useEffect(() => {
-    checkSession();
+    initializeAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
+    } = supabase.auth.onAuthStateChange(
+      (_event, newSession) => {
+        setSession(newSession);
 
-      if (!newSession) {
-        setRegistrations([]);
-        setPackages([]);
-        setAgents([]);
+        if (!newSession) {
+          clearAdminSession();
+        }
       }
-    });
+    );
 
-    return () => subscription.unsubscribe();
+    return () =>
+      subscription.unsubscribe();
   }, []);
 
+  /* =======================================================
+     LOAD ADMIN DATA ONLY AFTER AAL2
+  ======================================================= */
+
   useEffect(() => {
-    if (session?.user?.email === ADMIN_EMAIL) {
+    if (
+      session?.user?.email ===
+        ADMIN_EMAIL &&
+      adminReady
+    ) {
       loadEverything();
     }
-  }, [session]);
+  }, [session, adminReady]);
 
-  async function checkSession() {
-    const {
-      data: { session: currentSession },
-    } = await supabase.auth.getSession();
+  /* =======================================================
+     AUTH INITIALIZER
+  ======================================================= */
 
-    if (
-      currentSession?.user &&
-      currentSession.user.email !== ADMIN_EMAIL
-    ) {
-      await supabase.auth.signOut();
-      setSession(null);
+  async function initializeAuth() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const {
+        data: { session: currentSession },
+        error: sessionError,
+      } =
+        await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw sessionError;
+      }
+
+      if (!currentSession) {
+        setSession(null);
+        setAdminReady(false);
+        return;
+      }
+
+      if (
+        currentSession.user?.email !==
+        ADMIN_EMAIL
+      ) {
+        await supabase.auth.signOut();
+
+        setSession(null);
+        setAdminReady(false);
+
+        return;
+      }
+
+      setSession(currentSession);
+
+      await prepareMfa();
+    } catch (authError) {
+      console.error(
+        "Admin session error:",
+        authError
+      );
+
+      setError(
+        "Imeshindikana kuhakiki session ya admin."
+      );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setSession(currentSession);
-    setLoading(false);
   }
 
-  async function login(e) {
-    e.preventDefault();
+  /* =======================================================
+     LOGIN
+  ======================================================= */
+
+  async function login(event) {
+    event.preventDefault();
 
     setError("");
     setLoginLoading(true);
+    setAdminReady(false);
 
-    const { data, error: authError } =
-      await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+    try {
+      const {
+        data,
+        error: authError,
+      } =
+        await supabase.auth.signInWithPassword(
+          {
+            email: email
+              .trim()
+              .toLowerCase(),
 
-    setLoginLoading(false);
+            password,
+          }
+        );
 
-    if (authError) {
-      setError("Barua pepe au nenosiri si sahihi.");
-      return;
+      if (authError) {
+        throw authError;
+      }
+
+      if (
+        data.user?.email !==
+        ADMIN_EMAIL
+      ) {
+        await supabase.auth.signOut();
+
+        setError(
+          "Huna ruhusa ya kutumia mfumo huu."
+        );
+
+        return;
+      }
+
+      setSession(data.session);
+
+      await prepareMfa();
+    } catch (loginError) {
+      console.error(
+        "Admin login error:",
+        loginError
+      );
+
+      setError(
+        "Barua pepe au nenosiri si sahihi."
+      );
+    } finally {
+      setLoginLoading(false);
     }
-
-    if (data.user?.email !== ADMIN_EMAIL) {
-      await supabase.auth.signOut();
-
-      setError("Huna ruhusa ya kutumia mfumo huu.");
-      return;
-    }
-
-    setSession(data.session);
   }
+
+  /* =========================================================
+     MFA PREPARATION
+  ========================================================= */
+
+  async function prepareMfa() {
+    setError("");
+    setAdminReady(false);
+
+    try {
+      /*
+       * Check current AAL.
+       */
+      const {
+        data: aalData,
+        error: aalError,
+      } =
+        await supabase.auth.mfa
+          .getAuthenticatorAssuranceLevel();
+
+      if (aalError) {
+        throw aalError;
+      }
+
+      /*
+       * Already MFA authenticated.
+       */
+      if (
+        aalData?.currentLevel ===
+        "aal2"
+      ) {
+        setAdminReady(true);
+
+        setMfaStage("none");
+        setMfaCode("");
+
+        return;
+      }
+
+      /*
+       * Find existing MFA factors.
+       */
+      const {
+        data: factorsData,
+        error: factorsError,
+      } =
+        await supabase.auth.mfa
+          .listFactors();
+
+      if (factorsError) {
+        throw factorsError;
+      }
+
+      const totpFactors =
+        factorsData?.totp || [];
+
+      /*
+       * Find verified authenticator.
+       */
+      const verifiedFactor =
+        totpFactors.find(
+          (factor) =>
+            factor.status ===
+            "verified"
+        );
+
+      /*
+       * Existing MFA → ask for code.
+       */
+      if (verifiedFactor) {
+        setMfaFactorId(
+          verifiedFactor.id
+        );
+
+        setMfaStage("verify");
+
+        setMfaQrCode("");
+        setMfaSecret("");
+
+        return;
+      }
+
+      /*
+       * No verified factor → enrollment.
+       */
+      await createMfaEnrollment();
+    } catch (mfaError) {
+      console.error(
+        "MFA preparation error:",
+        mfaError
+      );
+
+      setError(
+        "Imeshindikana kuanzisha usalama wa MFA."
+      );
+    }
+  }
+
+  /* =========================================================
+     MFA ENROLLMENT
+  ========================================================= */
+
+  async function createMfaEnrollment() {
+    setMfaLoading(true);
+    setError("");
+
+    try {
+      const {
+        data,
+        error: enrollError,
+      } =
+        await supabase.auth.mfa.enroll({
+          factorType: "totp",
+
+          friendlyName:
+            "Cherehani Admin " +
+            Date.now(),
+        });
+
+      if (enrollError) {
+        throw enrollError;
+      }
+
+      setMfaFactorId(
+        data.id
+      );
+
+      setMfaQrCode(
+        data.totp?.qr_code || ""
+      );
+
+      setMfaSecret(
+        data.totp?.secret || ""
+      );
+
+      setMfaStage("enroll");
+
+      setMfaCode("");
+    } catch (enrollError) {
+      console.error(
+        "MFA enrollment error:",
+        enrollError
+      );
+
+      setError(
+        "Imeshindikana kutengeneza MFA QR Code."
+      );
+    } finally {
+      setMfaLoading(false);
+    }
+  }
+
+  /* =========================================================
+     MFA VERIFY
+  ========================================================= */
+
+  async function verifyMfa(event) {
+    event.preventDefault();
+
+    setError("");
+
+    const cleanCode =
+      mfaCode
+        .replace(/\D/g, "")
+        .slice(0, 6);
+
+    if (
+      cleanCode.length !== 6
+    ) {
+      setError(
+        "Weka namba zote 6 kutoka Authenticator app."
+      );
+
+      return;
+    }
+
+    if (!mfaFactorId) {
+      setError(
+        "MFA factor haijapatikana. Tafadhali ingia tena."
+      );
+
+      return;
+    }
+
+    setMfaLoading(true);
+
+    try {
+      const {
+        error: verifyError,
+      } =
+        await supabase.auth.mfa
+          .challengeAndVerify({
+            factorId:
+              mfaFactorId,
+
+            code: cleanCode,
+          });
+
+      if (verifyError) {
+        throw verifyError;
+      }
+
+      /*
+       * Confirm upgraded session.
+       */
+      const {
+        data: aalData,
+        error: aalError,
+      } =
+        await supabase.auth.mfa
+          .getAuthenticatorAssuranceLevel();
+
+      if (aalError) {
+        throw aalError;
+      }
+
+      if (
+        aalData?.currentLevel !==
+        "aal2"
+      ) {
+        throw new Error(
+          "Session did not reach AAL2."
+        );
+      }
+
+      const {
+        data: {
+          session:
+            refreshedSession,
+        },
+      } =
+        await supabase.auth.getSession();
+
+      setSession(
+        refreshedSession
+      );
+
+      setAdminReady(true);
+
+      setMfaStage("none");
+      setMfaCode("");
+
+      setError("");
+    } catch (verifyError) {
+      console.error(
+        "MFA verification error:",
+        verifyError
+      );
+
+      setError(
+        "Msimbo wa MFA si sahihi au umeisha muda. Jaribu namba mpya."
+      );
+    } finally {
+      setMfaLoading(false);
+    }
+  }
+
+  /* =========================================================
+     NEW MFA QR
+  ========================================================= */
+
+  async function generateNewMfaQr() {
+    setError("");
+    setMfaLoading(true);
+
+    try {
+      /*
+       * Remove current unverified enrollment
+       * where possible.
+       */
+      if (mfaFactorId) {
+        try {
+          await supabase.auth.mfa
+            .unenroll({
+              factorId:
+                mfaFactorId,
+            });
+        } catch (
+          unenrollError
+        ) {
+          console.warn(
+            "Could not remove old factor:",
+            unenrollError
+          );
+        }
+      }
+
+      setMfaFactorId("");
+      setMfaQrCode("");
+      setMfaSecret("");
+      setMfaCode("");
+
+      await createMfaEnrollment();
+    } catch (qrError) {
+      console.error(
+        "New MFA QR error:",
+        qrError
+      );
+
+      setError(
+        "Imeshindikana kutengeneza QR mpya."
+      );
+    } finally {
+      setMfaLoading(false);
+    }
+  }
+
+  /* =========================================================
+     LOGOUT
+  ========================================================= */
 
   async function logout() {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (logoutError) {
+      console.error(
+        logoutError
+      );
+    }
 
+    clearAdminSession();
+  }
+
+  function clearAdminSession() {
     setSession(null);
+    setAdminReady(false);
+
+    setMfaStage("none");
+    setMfaCode("");
+    setMfaFactorId("");
+    setMfaQrCode("");
+    setMfaSecret("");
+
     setRegistrations([]);
-    setPackages([]);
     setAgents([]);
+    setPackages([]);
+
+    setSelectedRegistration(
+      null
+    );
+
+    setSelectedAgent(null);
+
     setPassword("");
+
     setTab("registrations");
   }
+
+  /* =========================================================
+     LOAD ALL
+  ========================================================= */
 
   async function loadEverything() {
     setDataLoading(true);
     setError("");
 
-    await Promise.all([
-      loadRegistrations(),
-      loadPackages(),
-      loadAgents(),
-    ]);
-
-    setDataLoading(false);
+    try {
+      await Promise.all([
+        loadRegistrations(),
+        loadAgents(),
+        loadPackages(),
+      ]);
+    } finally {
+      setDataLoading(false);
+    }
   }
+
+  /* =========================================================
+     REGISTRATIONS
+  ========================================================= */
 
   async function loadRegistrations() {
-    const { data, error: fetchError } = await supabase
-      .from("registrations")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const {
+      data,
+      error: fetchError,
+    } =
+      await supabase
+        .from("registrations")
+        .select("*")
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          }
+        );
 
     if (fetchError) {
-      console.error(fetchError);
-      setError("Imeshindikana kupakia washiriki.");
+      console.error(
+        "Registrations error:",
+        fetchError
+      );
+
+      setError(
+        "Imeshindikana kupakia washiriki."
+      );
+
       return;
     }
 
-    setRegistrations(data || []);
+    setRegistrations(
+      data || []
+    );
   }
 
-  async function loadPackages() {
-    const { data, error: fetchError } = await supabase
-      .from("packages")
-      .select("*")
-      .order("display_order", { ascending: true });
-
-    if (fetchError) {
-      console.error(fetchError);
-      return;
-    }
-
-    setPackages(data || []);
-  }
+  /* =========================================================
+     AGENTS
+  ========================================================= */
 
   async function loadAgents() {
-    const { data, error: fetchError } = await supabase
-      .from("agents")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const {
+      data,
+      error: agentsError,
+    } =
+      await supabase
+        .from("agents")
+        .select("*")
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          }
+        );
 
-    if (fetchError) {
-      console.error(fetchError);
-      setError("Imeshindikana kupakia agents.");
+    if (agentsError) {
+      console.error(
+        "Agents error:",
+        agentsError
+      );
+
+      setError(
+        "Imeshindikana kupakia agents."
+      );
+
       return;
     }
 
-    setAgents(data || []);
+    setAgents(
+      data || []
+    );
   }
+
+  /* =========================================================
+     PACKAGES
+  ========================================================= */
+
+  async function loadPackages() {
+    const {
+      data,
+      error: packageError,
+    } =
+      await supabase
+        .from("packages")
+        .select("*")
+        .order(
+          "display_order",
+          {
+            ascending: true,
+          }
+        );
+
+    if (packageError) {
+      console.error(
+        "Packages error:",
+        packageError
+      );
+
+      setError(
+        "Imeshindikana kupakia vifurushi."
+      );
+
+      return;
+    }
+
+    setPackages(
+      data || []
+    );
+  }
+
+  /* =========================================================
+     AGENT HELPERS
+  ========================================================= */
 
   function getAgent(agentId) {
-    if (!agentId) return null;
+    if (!agentId) {
+      return null;
+    }
 
-    return agents.find((agent) => agent.id === agentId) || null;
+    return (
+      agents.find(
+        (agent) =>
+          agent.id === agentId
+      ) || null
+    );
   }
 
-  function getAgentName(agentId) {
-    if (!agentId) return "Public";
+  function getAgentName(
+    agentId
+  ) {
+    if (!agentId) {
+      return "Public";
+    }
 
-    const agent = getAgent(agentId);
-
-    return agent?.full_name || "Agent";
+    return (
+      getAgent(agentId)
+        ?.full_name ||
+      "Agent"
+    );
   }
 
-  function getAgentRegistrations(agentId) {
+  function getAgentRegistrations(
+    agentId
+  ) {
     return registrations.filter(
-      (registration) => registration.agent_id === agentId
+      (registration) =>
+        registration.agent_id ===
+        agentId
     );
   }
 
-  async function updateStatus(id, status) {
-    const { error: updateError } = await supabase
-      .from("registrations")
-      .update({
-        hali_ya_usajili: status,
-      })
-      .eq("id", id);
+  /* =========================================================
+     UPDATE REGISTRATION STATUS
+  ========================================================= */
+
+  async function updateStatus(
+    registrationId,
+    newStatus
+  ) {
+    const {
+      error: updateError,
+    } =
+      await supabase
+        .from("registrations")
+        .update({
+          hali_ya_usajili:
+            newStatus,
+        })
+        .eq(
+          "id",
+          registrationId
+        );
 
     if (updateError) {
-      console.error(updateError);
-      alert("Imeshindikana kubadilisha hali ya usajili.");
+      console.error(
+        "Registration status error:",
+        updateError
+      );
+
+      alert(
+        "Imeshindikana kubadilisha hali ya usajili."
+      );
+
       return;
     }
 
-    setRegistrations((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              hali_ya_usajili: status,
-            }
-          : item
-      )
+    setRegistrations(
+      (current) =>
+        current.map(
+          (registration) =>
+            registration.id ===
+            registrationId
+              ? {
+                  ...registration,
+
+                  hali_ya_usajili:
+                    newStatus,
+                }
+              : registration
+        )
     );
 
-    if (selected?.id === id) {
-      setSelected((current) => ({
-        ...current,
-        hali_ya_usajili: status,
-      }));
-    }
+    setSelectedRegistration(
+      (current) => {
+        if (
+          !current ||
+          current.id !==
+            registrationId
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+
+          hali_ya_usajili:
+            newStatus,
+        };
+      }
+    );
   }
 
-  async function toggleAgent(agent) {
-    const newValue = !agent.is_active;
+  /* =========================================================
+     TOGGLE AGENT
+  ========================================================= */
 
-    const { error: updateError } = await supabase
-      .from("agents")
-      .update({
-        is_active: newValue,
-      })
-      .eq("id", agent.id);
+  async function toggleAgent(
+    agent
+  ) {
+    const newValue =
+      !agent.is_active;
+
+    const {
+      error: updateError,
+    } =
+      await supabase
+        .from("agents")
+        .update({
+          is_active:
+            newValue,
+        })
+        .eq(
+          "id",
+          agent.id
+        );
 
     if (updateError) {
-      console.error(updateError);
-      alert("Imeshindikana kubadilisha hali ya agent.");
+      console.error(
+        "Agent update error:",
+        updateError
+      );
+
+      alert(
+        "Imeshindikana kubadilisha hali ya agent."
+      );
+
       return;
     }
 
-    setAgents((current) =>
-      current.map((item) =>
-        item.id === agent.id
-          ? {
-              ...item,
-              is_active: newValue,
-            }
-          : item
-      )
+    setAgents(
+      (current) =>
+        current.map(
+          (item) =>
+            item.id === agent.id
+              ? {
+                  ...item,
+
+                  is_active:
+                    newValue,
+                }
+              : item
+        )
     );
 
-    if (selectedAgent?.id === agent.id) {
-      setSelectedAgent((current) => ({
-        ...current,
-        is_active: newValue,
-      }));
+    if (
+      selectedAgent?.id ===
+      agent.id
+    ) {
+      setSelectedAgent(
+        (current) => ({
+          ...current,
+
+          is_active:
+            newValue,
+        })
+      );
     }
   }
+
+  /* =========================================================
+     PACKAGE EDIT
+  ========================================================= */
 
   function editPackage(pkg) {
-    setEditingPackageId(pkg.id);
+    setEditingPackageId(
+      pkg.id
+    );
 
     setPackageForm({
-      name: pkg.name || "",
-      category: pkg.category || "",
-      tent_size: pkg.tent_size || "",
-      price: pkg.price || "",
-      vat_note: pkg.vat_note || "",
-      description: pkg.description || "",
-      included_items: pkg.included_items || "",
-      participant_limit: pkg.participant_limit || "",
-      display_order: pkg.display_order || 0,
-      is_active: Boolean(pkg.is_active),
+      name:
+        pkg.name || "",
+
+      category:
+        pkg.category || "",
+
+      tent_size:
+        pkg.tent_size || "",
+
+      price:
+        pkg.price ?? "",
+
+      vat_note:
+        pkg.vat_note || "",
+
+      description:
+        pkg.description || "",
+
+      included_items:
+        pkg.included_items ||
+        "",
+
+      participant_limit:
+        pkg.participant_limit ??
+        "",
+
+      display_order:
+        pkg.display_order || 0,
+
+      is_active:
+        Boolean(pkg.is_active),
     });
 
     window.scrollTo({
@@ -348,280 +1096,514 @@ export default function Admin() {
   }
 
   function cancelPackageEdit() {
-    setEditingPackageId(null);
-    setPackageForm(emptyPackage);
+    setEditingPackageId(
+      null
+    );
+
+    setPackageForm(
+      emptyPackage
+    );
   }
 
-  async function savePackage(e) {
-    e.preventDefault();
+  async function savePackage(
+    event
+  ) {
+    event.preventDefault();
 
-    if (!packageForm.name.trim()) {
-      alert("Weka jina la kifurushi.");
+    if (
+      !packageForm.name.trim()
+    ) {
+      alert(
+        "Weka jina la kifurushi."
+      );
+
       return;
     }
 
     if (
-      packageForm.price === "" ||
-      packageForm.price === null ||
-      packageForm.price === undefined
+      packageForm.price ===
+        "" ||
+      packageForm.price ===
+        null ||
+      packageForm.price ===
+        undefined
     ) {
-      alert("Weka bei ya kifurushi.");
+      alert(
+        "Weka bei ya kifurushi."
+      );
+
       return;
     }
 
     setSavingPackage(true);
 
     const payload = {
-      name: packageForm.name.trim(),
-      category: packageForm.category.trim() || null,
-      tent_size: packageForm.tent_size.trim() || null,
-      price: Number(packageForm.price) || 0,
-      vat_note: packageForm.vat_note.trim() || null,
-      description: packageForm.description.trim() || null,
+      name:
+        packageForm.name.trim(),
+
+      category:
+        packageForm.category
+          .trim() || null,
+
+      tent_size:
+        packageForm.tent_size
+          .trim() || null,
+
+      price:
+        Number(
+          packageForm.price
+        ) || 0,
+
+      vat_note:
+        packageForm.vat_note
+          .trim() || null,
+
+      description:
+        packageForm.description
+          .trim() || null,
 
       included_items:
-        packageForm.included_items.trim() || null,
+        packageForm
+          .included_items
+          .trim() || null,
 
       participant_limit:
-        packageForm.participant_limit === ""
+        packageForm
+          .participant_limit ===
+        ""
           ? null
-          : Number(packageForm.participant_limit),
+          : Number(
+              packageForm
+                .participant_limit
+            ),
 
       display_order:
-        Number(packageForm.display_order) || 0,
+        Number(
+          packageForm
+            .display_order
+        ) || 0,
 
-      is_active: packageForm.is_active,
+      is_active:
+        packageForm.is_active,
 
-      updated_at: new Date().toISOString(),
+      updated_at:
+        new Date().toISOString(),
     };
 
-    let response;
+    try {
+      let response;
 
-    if (editingPackageId) {
-      response = await supabase
-        .from("packages")
-        .update(payload)
-        .eq("id", editingPackageId);
-    } else {
-      response = await supabase
-        .from("packages")
-        .insert([payload]);
+      if (
+        editingPackageId
+      ) {
+        response =
+          await supabase
+            .from("packages")
+            .update(payload)
+            .eq(
+              "id",
+              editingPackageId
+            );
+      } else {
+        response =
+          await supabase
+            .from("packages")
+            .insert([
+              payload,
+            ]);
+      }
+
+      if (response.error) {
+        throw response.error;
+      }
+
+      cancelPackageEdit();
+
+      await loadPackages();
+    } catch (packageError) {
+      console.error(
+        "Package save error:",
+        packageError
+      );
+
+      alert(
+        "Imeshindikana kuhifadhi kifurushi."
+      );
+    } finally {
+      setSavingPackage(false);
     }
-
-    setSavingPackage(false);
-
-    if (response.error) {
-      console.error(response.error);
-      alert("Imeshindikana kuhifadhi kifurushi.");
-      return;
-    }
-
-    cancelPackageEdit();
-    await loadPackages();
   }
 
-  async function togglePackage(pkg) {
-    const { error: updateError } = await supabase
-      .from("packages")
-      .update({
-        is_active: !pkg.is_active,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", pkg.id);
+  async function togglePackage(
+    pkg
+  ) {
+    const {
+      error: updateError,
+    } =
+      await supabase
+        .from("packages")
+        .update({
+          is_active:
+            !pkg.is_active,
+
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq(
+          "id",
+          pkg.id
+        );
 
     if (updateError) {
-      console.error(updateError);
-      alert("Imeshindikana kubadilisha kifurushi.");
+      console.error(
+        updateError
+      );
+
+      alert(
+        "Imeshindikana kubadilisha kifurushi."
+      );
+
       return;
     }
 
     await loadPackages();
   }
 
-  const filteredRegistrations = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  /* =========================================================
+     FILTER REGISTRATIONS
+  ========================================================= */
 
-    if (!q) {
-      return registrations;
-    }
+  const filteredRegistrations =
+    useMemo(() => {
+      const query =
+        search
+          .trim()
+          .toLowerCase();
 
-    return registrations.filter((r) => {
-      const agentName = getAgentName(r.agent_id);
+      if (!query) {
+        return registrations;
+      }
 
-      const values = [
-        r.jina_kamili,
-        r.jina_biashara,
-        r.namba_simu,
-        r.package_name,
-        r.hali_ya_usajili,
-        agentName,
-      ];
+      return registrations.filter(
+        (registration) => {
+          const agentName =
+            getAgentName(
+              registration.agent_id
+            );
 
-      return values.some((value) =>
-        String(value || "")
-          .toLowerCase()
-          .includes(q)
+          const fields = [
+            registration.jina_kamili,
+            registration.jina_biashara,
+            registration.namba_simu,
+            registration.barua_pepe,
+            registration.mkoa,
+            registration.package_name,
+            registration.hali_ya_usajili,
+            agentName,
+          ];
+
+          return fields.some(
+            (field) =>
+              String(field || "")
+                .toLowerCase()
+                .includes(query)
+          );
+        }
       );
-    });
-  }, [registrations, agents, search]);
+    }, [
+      registrations,
+      agents,
+      search,
+    ]);
 
-  const filteredAgents = useMemo(() => {
-    const q = agentSearch.trim().toLowerCase();
+  /* =========================================================
+     FILTER AGENTS
+  ========================================================= */
 
-    if (!q) {
-      return agents;
-    }
+  const filteredAgents =
+    useMemo(() => {
+      const query =
+        agentSearch
+          .trim()
+          .toLowerCase();
 
-    return agents.filter((agent) =>
-      [
-        agent.full_name,
-        agent.email,
-        agent.phone,
-      ].some((value) =>
-        String(value || "")
-          .toLowerCase()
-          .includes(q)
-      )
-    );
-  }, [agents, agentSearch]);
+      if (!query) {
+        return agents;
+      }
 
-  const mpya = registrations.filter(
-    (r) => r.hali_ya_usajili === "mpya"
-  ).length;
+      return agents.filter(
+        (agent) =>
+          [
+            agent.full_name,
+            agent.email,
+            agent.phone,
+          ].some((field) =>
+            String(field || "")
+              .toLowerCase()
+              .includes(query)
+          )
+      );
+    }, [
+      agents,
+      agentSearch,
+    ]);
 
-  const amelipa = registrations.filter(
-    (r) => r.hali_ya_usajili === "amelipa"
-  ).length;
+  /* =========================================================
+     STATS
+  ========================================================= */
 
-  const confirmed = registrations.filter(
-    (r) => r.hali_ya_usajili === "amethibitishwa"
-  ).length;
+  const newCount =
+    registrations.filter(
+      (registration) =>
+        registration.hali_ya_usajili ===
+        "mpya"
+    ).length;
 
-  const todayRegistrations = registrations.filter((r) =>
-    sameDay(r.created_at)
-  ).length;
+  const paidCount =
+    registrations.filter(
+      (registration) =>
+        registration.hali_ya_usajili ===
+        "amelipa"
+    ).length;
 
-  const publicRegistrations = registrations.filter(
-    (r) => !r.agent_id
-  ).length;
+  const confirmedCount =
+    registrations.filter(
+      (registration) =>
+        registration.hali_ya_usajili ===
+        "amethibitishwa"
+    ).length;
 
-  const agentRegistrations = registrations.filter(
-    (r) => Boolean(r.agent_id)
-  ).length;
+  const todayCount =
+    registrations.filter(
+      (registration) =>
+        sameDay(
+          registration.created_at
+        )
+    ).length;
 
-  const activeAgents = agents.filter(
-    (agent) => agent.is_active
-  ).length;
+  const agentRegistrationCount =
+    registrations.filter(
+      (registration) =>
+        Boolean(
+          registration.agent_id
+        )
+    ).length;
 
-  const totalExpectedRevenue = registrations.reduce(
-    (sum, r) => sum + Number(r.package_price || 0),
-    0
-  );
+  const publicRegistrationCount =
+    registrations.filter(
+      (registration) =>
+        !registration.agent_id
+    ).length;
 
-  const paidRevenue = registrations
-    .filter(
-      (r) =>
-        r.hali_ya_usajili === "amelipa" ||
-        r.hali_ya_usajili === "amethibitishwa"
-    )
-    .reduce(
-      (sum, r) => sum + Number(r.package_price || 0),
+  const activeAgentCount =
+    agents.filter(
+      (agent) =>
+        agent.is_active
+    ).length;
+
+  const totalRegistrationValue =
+    registrations.reduce(
+      (
+        total,
+        registration
+      ) =>
+        total +
+        Number(
+          registration.package_price ||
+            0
+        ),
       0
     );
 
-  const packageReport = useMemo(() => {
-    const map = {};
-
-    registrations.forEach((registration) => {
-      const name =
-        registration.package_name || "Haijatajwa";
-
-      if (!map[name]) {
-        map[name] = {
-          name,
-          count: 0,
-          amount: 0,
-        };
-      }
-
-      map[name].count += 1;
-
-      map[name].amount += Number(
-        registration.package_price || 0
+  const paidRegistrationValue =
+    registrations
+      .filter(
+        (registration) =>
+          registration.hali_ya_usajili ===
+            "amelipa" ||
+          registration.hali_ya_usajili ===
+            "amethibitishwa"
+      )
+      .reduce(
+        (
+          total,
+          registration
+        ) =>
+          total +
+          Number(
+            registration.package_price ||
+              0
+          ),
+        0
       );
-    });
 
-    return Object.values(map).sort(
-      (a, b) => b.count - a.count
-    );
-  }, [registrations]);
+  /* =========================================================
+     AGENT PERFORMANCE
+  ========================================================= */
 
-  const agentPerformance = useMemo(() => {
-    return agents
-      .map((agent) => {
-        const list = getAgentRegistrations(agent.id);
+  const agentPerformance =
+    useMemo(() => {
+      return agents
+        .map((agent) => {
+          const list =
+            registrations.filter(
+              (registration) =>
+                registration.agent_id ===
+                agent.id
+            );
 
-        const today = list.filter((r) =>
-          sameDay(r.created_at)
-        ).length;
+          const today =
+            list.filter(
+              (registration) =>
+                sameDay(
+                  registration.created_at
+                )
+            ).length;
 
-        const paid = list.filter(
-          (r) =>
-            r.hali_ya_usajili === "amelipa" ||
-            r.hali_ya_usajili === "amethibitishwa"
-        ).length;
+          const paid =
+            list.filter(
+              (registration) =>
+                registration.hali_ya_usajili ===
+                  "amelipa" ||
+                registration.hali_ya_usajili ===
+                  "amethibitishwa"
+            ).length;
 
-        return {
-          ...agent,
-          total: list.length,
-          today,
-          paid,
-        };
-      })
-      .sort((a, b) => b.total - a.total);
-  }, [agents, registrations]);
+          return {
+            ...agent,
+
+            total:
+              list.length,
+
+            today,
+
+            paid,
+          };
+        })
+        .sort(
+          (a, b) =>
+            b.total - a.total
+        );
+    }, [
+      agents,
+      registrations,
+    ]);
+
+  /* =========================================================
+     PACKAGE REPORT
+  ========================================================= */
+
+  const packageReport =
+    useMemo(() => {
+      const report = {};
+
+      registrations.forEach(
+        (registration) => {
+          const name =
+            registration.package_name ||
+            "Haijatajwa";
+
+          if (!report[name]) {
+            report[name] = {
+              name,
+              count: 0,
+              amount: 0,
+            };
+          }
+
+          report[name].count +=
+            1;
+
+          report[name].amount +=
+            Number(
+              registration.package_price ||
+                0
+            );
+        }
+      );
+
+      return Object.values(
+        report
+      ).sort(
+        (a, b) =>
+          b.count - a.count
+      );
+    }, [registrations]);
+
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
       <>
-        <style>{adminStyles}</style>
+        <style>
+          {adminStyles}
+        </style>
 
         <div className="admin-loading">
-          Inapakia...
+          <div className="loader-dot" />
+
+          <p>
+            Inapakia mfumo...
+          </p>
         </div>
       </>
     );
   }
 
+  /* =========================================================
+     LOGIN SCREEN
+  ========================================================= */
+
   if (!session) {
     return (
       <>
-        <style>{adminStyles}</style>
+        <style>
+          {adminStyles}
+        </style>
 
-        <main className="admin-login-page">
-          <div className="login-card">
-            <div className="admin-badge">
+        <main className="auth-page">
+          <section className="auth-card">
+            <div className="security-badge">
               ADMIN
             </div>
 
             <h1>
-              Mwanza Cherehani Festival 2026
+              Mwanza Cherehani
+              Festival 2026
             </h1>
 
             <h2>
-              Ingia kwenye Mfumo wa Usimamizi
+              Mfumo wa Usimamizi
             </h2>
 
-            <form onSubmit={login}>
+            <p className="auth-description">
+              Ingia kwa akaunti ya
+              administrator.
+            </p>
+
+            {error && (
+              <div className="error-box">
+                {error}
+              </div>
+            )}
+
+            <form
+              onSubmit={login}
+            >
               <label>
                 Barua Pepe
 
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
+                  onChange={(event) =>
+                    setEmail(
+                      event.target.value
+                    )
                   }
+                  autoComplete="username"
                   required
                 />
               </label>
@@ -632,52 +1614,238 @@ export default function Admin() {
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
+                  onChange={(event) =>
+                    setPassword(
+                      event.target.value
+                    )
                   }
+                  autoComplete="current-password"
                   required
                 />
               </label>
 
-              {error && (
-                <div className="admin-error">
-                  {error}
-                </div>
-              )}
-
               <button
+                className="primary-auth-button"
                 type="submit"
-                disabled={loginLoading}
+                disabled={
+                  loginLoading
+                }
               >
                 {loginLoading
-                  ? "Inaingia..."
+                  ? "INAINGIA..."
                   : "INGIA"}
               </button>
             </form>
 
-            <a href="/">
-              ← Rudi kwenye Fomu ya Usajili
+            <a
+              className="back-link"
+              href="/"
+            >
+              ← Rudi kwenye Fomu
             </a>
-          </div>
+          </section>
         </main>
       </>
     );
   }
 
+  /* =========================================================
+     MFA SCREEN
+  ========================================================= */
+
+  if (!adminReady) {
+    return (
+      <>
+        <style>
+          {adminStyles}
+        </style>
+
+        <main className="auth-page">
+          <section className="auth-card mfa-card">
+            <div className="security-badge">
+              MFA SECURITY
+            </div>
+
+            <h1>
+              Admin Security
+            </h1>
+
+            {mfaStage ===
+            "enroll" ? (
+              <>
+                <h2>
+                  Weka Authenticator
+                </h2>
+
+                <p className="auth-description">
+                  Scan QR code kwa
+                  Google Authenticator,
+                  Microsoft Authenticator,
+                  1Password au
+                  authenticator nyingine
+                  inayotumia TOTP.
+                </p>
+
+                {mfaQrCode && (
+                  <div className="qr-container">
+                    <img
+                      src={
+                        mfaQrCode
+                      }
+                      alt="MFA QR Code"
+                    />
+                  </div>
+                )}
+
+                {mfaSecret && (
+                  <div className="secret-box">
+                    <span>
+                      Manual setup key
+                    </span>
+
+                    <code>
+                      {mfaSecret}
+                    </code>
+                  </div>
+                )}
+
+                <p className="security-note">
+                  Baada ya ku-scan,
+                  Authenticator app
+                  itakupa namba 6.
+                  Ingiza namba hiyo
+                  hapa chini.
+                </p>
+              </>
+            ) : (
+              <>
+                <h2>
+                  MFA Verification
+                </h2>
+
+                <p className="auth-description">
+                  Fungua Authenticator
+                  app yako na uweke
+                  namba 6 ya admin.
+                </p>
+              </>
+            )}
+
+            {error && (
+              <div className="error-box">
+                {error}
+              </div>
+            )}
+
+            <form
+              onSubmit={
+                verifyMfa
+              }
+            >
+              <label>
+                MFA Code
+
+                <input
+                  className="mfa-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(event) =>
+                    setMfaCode(
+                      event.target.value
+                        .replace(
+                          /\D/g,
+                          ""
+                        )
+                        .slice(
+                          0,
+                          6
+                        )
+                    )
+                  }
+                  placeholder="123456"
+                  required
+                />
+              </label>
+
+              <button
+                className="primary-auth-button"
+                type="submit"
+                disabled={
+                  mfaLoading ||
+                  mfaCode.length !== 6
+                }
+              >
+                {mfaLoading
+                  ? "INATHIBITISHA..."
+                  : "THIBITISHA MFA"}
+              </button>
+            </form>
+
+            {mfaStage ===
+              "enroll" && (
+              <button
+                type="button"
+                className="secondary-auth-button"
+                onClick={
+                  generateNewMfaQr
+                }
+                disabled={
+                  mfaLoading
+                }
+              >
+                Tengeneza QR Mpya
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="logout-auth-button"
+              onClick={logout}
+              disabled={
+                mfaLoading
+              }
+            >
+              Toka
+            </button>
+          </section>
+        </main>
+      </>
+    );
+  }
+
+  /* =========================================================
+     ADMIN DASHBOARD
+  ========================================================= */
+
   return (
     <>
-      <style>{adminStyles}</style>
+      <style>
+        {adminStyles}
+      </style>
 
       <main className="dashboard">
+        {/* ===================================================
+            HEADER
+        =================================================== */}
+
         <header className="admin-header">
           <div>
             <small>
-              MWANZA CHEREHANI FESTIVAL 2026
+              MWANZA CHEREHANI
+              FESTIVAL 2026
             </small>
 
             <h1>
-              Dashibodi ya Usimamizi
+              Dashibodi ya
+              Usimamizi
             </h1>
+
+            <div className="secure-session">
+              ● MFA Secured
+            </div>
           </div>
 
           <div className="header-actions">
@@ -690,15 +1858,23 @@ export default function Admin() {
             </a>
 
             <button
-              onClick={loadEverything}
-              disabled={dataLoading}
+              type="button"
+              onClick={
+                loadEverything
+              }
+              disabled={
+                dataLoading
+              }
             >
               {dataLoading
                 ? "Inapakia..."
                 : "↻ Refresh"}
             </button>
 
-            <button onClick={logout}>
+            <button
+              type="button"
+              onClick={logout}
+            >
               Toka
             </button>
           </div>
@@ -710,15 +1886,22 @@ export default function Admin() {
           </div>
         )}
 
+        {/* ===================================================
+            NAVIGATION
+        =================================================== */}
+
         <nav className="admin-tabs">
           <button
             className={
-              tab === "registrations"
+              tab ===
+              "registrations"
                 ? "active"
                 : ""
             }
             onClick={() =>
-              setTab("registrations")
+              setTab(
+                "registrations"
+              )
             }
           >
             Washiriki
@@ -739,7 +1922,8 @@ export default function Admin() {
 
           <button
             className={
-              tab === "packages"
+              tab ===
+              "packages"
                 ? "active"
                 : ""
             }
@@ -764,45 +1948,61 @@ export default function Admin() {
           </button>
         </nav>
 
-        {tab === "registrations" && (
+        {/* ===================================================
+            REGISTRATIONS
+        =================================================== */}
+
+        {tab ===
+          "registrations" && (
           <>
             <section className="stats">
               <StatCard
                 label="Washiriki Wote"
-                value={registrations.length}
+                value={
+                  registrations.length
+                }
               />
 
               <StatCard
                 label="Usajili Mpya"
-                value={mpya}
+                value={
+                  newCount
+                }
               />
 
               <StatCard
                 label="Wamelipa"
-                value={amelipa}
+                value={
+                  paidCount
+                }
               />
 
               <StatCard
                 label="Wamethibitishwa"
-                value={confirmed}
+                value={
+                  confirmedCount
+                }
               />
             </section>
 
-            <section className="admin-panel">
+            <section className="panel">
               <div className="panel-header">
                 <div>
                   <h2>
-                    Orodha ya Washiriki
+                    Orodha ya
+                    Washiriki
                   </h2>
 
                   <p>
-                    Simamia maombi yote
-                    yaliyowasilishwa.
+                    Simamia usajili
+                    wote wa festival.
                   </p>
                 </div>
 
                 <button
-                  onClick={loadRegistrations}
+                  onClick={
+                    loadRegistrations
+                  }
                 >
                   ↻ Refresh
                 </button>
@@ -812,15 +2012,18 @@ export default function Admin() {
                 <input
                   type="search"
                   value={search}
-                  onChange={(e) =>
-                    setSearch(e.target.value)
+                  onChange={(event) =>
+                    setSearch(
+                      event.target.value
+                    )
                   }
-                  placeholder="Tafuta jina, biashara, simu, kifurushi au agent..."
+                  placeholder="Tafuta jina, simu, biashara, kifurushi au agent..."
                 />
 
                 <span>
-                  {filteredRegistrations.length}
-                  {" "}
+                  {
+                    filteredRegistrations.length
+                  }{" "}
                   washiriki
                 </span>
               </div>
@@ -829,54 +2032,89 @@ export default function Admin() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Jina</th>
-                      <th>Biashara</th>
-                      <th>Simu</th>
-                      <th>Agent</th>
-                      <th>Kifurushi</th>
-                      <th>Bei</th>
-                      <th>Hali</th>
-                      <th>Vitendo</th>
+                      <th>
+                        Jina
+                      </th>
+
+                      <th>
+                        Biashara
+                      </th>
+
+                      <th>
+                        Simu
+                      </th>
+
+                      <th>
+                        Agent
+                      </th>
+
+                      <th>
+                        Kifurushi
+                      </th>
+
+                      <th>
+                        Bei
+                      </th>
+
+                      <th>
+                        Hali
+                      </th>
+
+                      <th>
+                        Vitendo
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody>
                     {filteredRegistrations.map(
-                      (r) => (
-                        <tr key={r.id}>
+                      (
+                        registration
+                      ) => (
+                        <tr
+                          key={
+                            registration.id
+                          }
+                        >
                           <td>
                             <strong>
-                              {r.jina_kamili}
+                              {
+                                registration.jina_kamili
+                              }
                             </strong>
 
                             <small>
                               {formatDate(
-                                r.created_at
+                                registration.created_at
                               )}
                             </small>
                           </td>
 
                           <td>
-                            {r.jina_biashara ||
+                            {registration.jina_biashara ||
                               "—"}
                           </td>
 
                           <td>
-                            {r.namba_simu}
+                            {
+                              registration.namba_simu
+                            }
                           </td>
 
                           <td>
-                            {r.agent_id ? (
+                            {registration.agent_id ? (
                               <button
                                 type="button"
-                                className="agent-link"
+                                className="link-button"
                                 onClick={() => {
                                   const agent =
                                     getAgent(
-                                      r.agent_id
+                                      registration.agent_id
                                     );
 
-                                  if (agent) {
+                                  if (
+                                    agent
+                                  ) {
                                     setSelectedAgent(
                                       agent
                                     );
@@ -884,7 +2122,7 @@ export default function Admin() {
                                 }}
                               >
                                 {getAgentName(
-                                  r.agent_id
+                                  registration.agent_id
                                 )}
                               </button>
                             ) : (
@@ -895,14 +2133,14 @@ export default function Admin() {
                           </td>
 
                           <td>
-                            {r.package_name ||
+                            {registration.package_name ||
                               "—"}
                           </td>
 
                           <td>
-                            {r.package_price
+                            {registration.package_price
                               ? `TSh ${money(
-                                  r.package_price
+                                  registration.package_price
                                 )}`
                               : "—"}
                           </td>
@@ -910,13 +2148,17 @@ export default function Admin() {
                           <td>
                             <select
                               value={
-                                r.hali_ya_usajili ||
+                                registration.hali_ya_usajili ||
                                 "mpya"
                               }
-                              onChange={(e) =>
+                              onChange={(
+                                event
+                              ) =>
                                 updateStatus(
-                                  r.id,
-                                  e.target.value
+                                  registration.id,
+                                  event
+                                    .target
+                                    .value
                                 )
                               }
                             >
@@ -933,47 +2175,51 @@ export default function Admin() {
                                       value
                                     }
                                   >
-                                    {label}
+                                    {
+                                      label
+                                    }
                                   </option>
                                 )
                               )}
                             </select>
                           </td>
 
-                          <td className="actions">
-                            <button
-                              onClick={() =>
-                                setSelected(r)
-                              }
-                            >
-                              Angalia
-                            </button>
+                          <td>
+                            <div className="row-actions">
+                              <button
+                                onClick={() =>
+                                  setSelectedRegistration(
+                                    registration
+                                  )
+                                }
+                              >
+                                Angalia
+                              </button>
 
-                            <a
-                              href={`https://wa.me/${whatsappNumber(
-                                r.namba_simu
-                              )}?text=${encodeURIComponent(
-                                `Habari ${
-                                  r.jina_kamili
-                                }, tunawasiliana nawe kutoka Mwanza Cherehani Festival 2026 kuhusu usajili wako${
-                                  r.package_name
-                                    ? `. Umechagua kifurushi cha ${
-                                        r.package_name
-                                      } chenye gharama ya TSh ${money(
-                                        r.package_price
-                                      )}${
-                                        r.package_vat_note
-                                          ? ` ${r.package_vat_note}`
-                                          : ""
-                                      }.`
-                                    : "."
-                                } Tutakutumia maelekezo rasmi ya malipo.`
-                              )}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              WhatsApp
-                            </a>
+                              <a
+                                href={`https://wa.me/${whatsappNumber(
+                                  registration.namba_simu
+                                )}?text=${encodeURIComponent(
+                                  `Habari ${
+                                    registration.jina_kamili
+                                  }, tunawasiliana nawe kutoka Mwanza Cherehani Festival 2026 kuhusu usajili wako${
+                                    registration.package_name
+                                      ? `. Umechagua kifurushi cha ${registration.package_name} chenye gharama ya TSh ${money(
+                                          registration.package_price
+                                        )}${
+                                          registration.package_vat_note
+                                            ? ` ${registration.package_vat_note}`
+                                            : ""
+                                        }.`
+                                      : "."
+                                  } Tutakutumia maelekezo rasmi ya malipo.`
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                WhatsApp
+                              </a>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -984,40 +2230,50 @@ export default function Admin() {
 
               {filteredRegistrations.length ===
                 0 && (
-                <div className="empty">
-                  Hakuna usajili
-                  uliopatikana.
-                </div>
+                <EmptyState text="Hakuna usajili uliopatikana." />
               )}
             </section>
           </>
         )}
 
-        {tab === "agents" && (
+        {/* ===================================================
+            AGENTS
+        =================================================== */}
+
+        {tab ===
+          "agents" && (
           <>
             <section className="stats">
               <StatCard
                 label="Agents Wote"
-                value={agents.length}
+                value={
+                  agents.length
+                }
               />
 
               <StatCard
                 label="Active Agents"
-                value={activeAgents}
+                value={
+                  activeAgentCount
+                }
               />
 
               <StatCard
                 label="Usajili wa Agents"
-                value={agentRegistrations}
+                value={
+                  agentRegistrationCount
+                }
               />
 
               <StatCard
                 label="Usajili Leo"
-                value={todayRegistrations}
+                value={
+                  todayCount
+                }
               />
             </section>
 
-            <section className="admin-panel">
+            <section className="panel">
               <div className="panel-header">
                 <div>
                   <h2>
@@ -1025,46 +2281,52 @@ export default function Admin() {
                   </h2>
 
                   <p>
-                    Simamia agents na uone
-                    performance yao.
+                    Simamia agents
+                    na performance
+                    zao.
                   </p>
                 </div>
 
                 <button
-                  onClick={loadAgents}
+                  onClick={
+                    loadAgents
+                  }
                 >
                   ↻ Refresh
                 </button>
               </div>
 
-              <div className="agent-note">
+              <div className="agent-information">
                 <strong>
-                  Kuongeza Agent Mpya:
+                  Agent Accounts
                 </strong>
 
-                {" "}
-                tengeneza user kwanza
-                Supabase Authentication,
-                kisha ongeza row yenye UID
-                ileile kwenye table ya
-                agents.
+                <p>
+                  Agent anaweza
+                  kufikia taarifa
+                  zake pekee kupitia
+                  /agent.
+                </p>
               </div>
 
               <div className="toolbar">
                 <input
                   type="search"
-                  value={agentSearch}
-                  onChange={(e) =>
+                  value={
+                    agentSearch
+                  }
+                  onChange={(event) =>
                     setAgentSearch(
-                      e.target.value
+                      event.target.value
                     )
                   }
-                  placeholder="Tafuta agent kwa jina, email au simu..."
+                  placeholder="Tafuta agent kwa jina, simu au email..."
                 />
 
                 <span>
-                  {filteredAgents.length}
-                  {" "}
+                  {
+                    filteredAgents.length
+                  }{" "}
                   agents
                 </span>
               </div>
@@ -1072,30 +2334,35 @@ export default function Admin() {
               <div className="agent-grid">
                 {filteredAgents.map(
                   (agent) => {
-                    const agentRegs =
+                    const agentRegistrations =
                       getAgentRegistrations(
                         agent.id
                       );
 
                     const today =
-                      agentRegs.filter((r) =>
-                        sameDay(
-                          r.created_at
-                        )
+                      agentRegistrations.filter(
+                        (
+                          registration
+                        ) =>
+                          sameDay(
+                            registration.created_at
+                          )
                       ).length;
 
                     return (
-                      <div
+                      <article
                         className="agent-card"
-                        key={agent.id}
+                        key={
+                          agent.id
+                        }
                       >
-                        <div className="agent-card-head">
+                        <div className="agent-card-header">
                           <div>
                             <span
                               className={
                                 agent.is_active
-                                  ? "status-active"
-                                  : "status-inactive"
+                                  ? "badge-active"
+                                  : "badge-inactive"
                               }
                             >
                               {agent.is_active
@@ -1109,9 +2376,9 @@ export default function Admin() {
                             </h3>
                           </div>
 
-                          <strong className="agent-total">
+                          <strong className="agent-count">
                             {
-                              agentRegs.length
+                              agentRegistrations.length
                             }
                           </strong>
                         </div>
@@ -1126,7 +2393,7 @@ export default function Admin() {
                             "—"}
                         </p>
 
-                        <div className="agent-mini-stats">
+                        <div className="agent-stats">
                           <div>
                             <span>
                               Jumla
@@ -1134,7 +2401,7 @@ export default function Admin() {
 
                             <strong>
                               {
-                                agentRegs.length
+                                agentRegistrations.length
                               }
                             </strong>
                           </div>
@@ -1145,13 +2412,16 @@ export default function Admin() {
                             </span>
 
                             <strong>
-                              {today}
+                              {
+                                today
+                              }
                             </strong>
                           </div>
                         </div>
 
-                        <div className="agent-card-actions">
+                        <div className="card-actions">
                           <button
+                            className="primary-small"
                             onClick={() =>
                               setSelectedAgent(
                                 agent
@@ -1164,8 +2434,8 @@ export default function Admin() {
                           <button
                             className={
                               agent.is_active
-                                ? "danger-button"
-                                : "success-button"
+                                ? "danger-small"
+                                : "success-small"
                             }
                             onClick={() =>
                               toggleAgent(
@@ -1178,7 +2448,7 @@ export default function Admin() {
                               : "Washa Agent"}
                           </button>
                         </div>
-                      </div>
+                      </article>
                     );
                   }
                 )}
@@ -1186,41 +2456,61 @@ export default function Admin() {
 
               {filteredAgents.length ===
                 0 && (
-                <div className="empty">
-                  Hakuna agent
-                  aliyepatikana.
-                </div>
+                <EmptyState text="Hakuna agent aliyepatikana." />
               )}
             </section>
           </>
         )}
 
-        {tab === "packages" && (
+        {/* ===================================================
+            PACKAGES
+        =================================================== */}
+
+        {tab ===
+          "packages" && (
           <>
-            <section className="package-editor">
-              <h2>
-                {editingPackageId
-                  ? "Hariri Kifurushi"
-                  : "Ongeza Kifurushi"}
-              </h2>
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>
+                    {editingPackageId
+                      ? "Hariri Kifurushi"
+                      : "Ongeza Kifurushi"}
+                  </h2>
+
+                  <p>
+                    Simamia bei na
+                    vifurushi vya
+                    ushiriki.
+                  </p>
+                </div>
+              </div>
 
               <form
                 className="package-form"
-                onSubmit={savePackage}
+                onSubmit={
+                  savePackage
+                }
               >
                 <label>
-                  Jina la Kifurushi *
+                  Jina la Kifurushi
+                  *
 
                   <input
                     value={
                       packageForm.name
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        name:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          name:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                     required
                   />
@@ -1233,29 +2523,40 @@ export default function Admin() {
                     value={
                       packageForm.category
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        category:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          category:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                   />
                 </label>
 
                 <label>
-                  Ukubwa wa Tenti / Eneo
+                  Ukubwa wa
+                  Tenti / Eneo
 
                   <input
                     value={
                       packageForm.tent_size
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        tent_size:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          tent_size:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                     placeholder="Mfano: 5x5 m"
                   />
@@ -1270,12 +2571,17 @@ export default function Admin() {
                     value={
                       packageForm.price
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        price:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          price:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                     required
                   />
@@ -1288,19 +2594,25 @@ export default function Admin() {
                     value={
                       packageForm.vat_note
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        vat_note:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          vat_note:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                     placeholder="+ VAT"
                   />
                 </label>
 
                 <label>
-                  Idadi ya Washiriki
+                  Idadi ya
+                  Washiriki
 
                   <input
                     type="number"
@@ -1308,48 +2620,65 @@ export default function Admin() {
                     value={
                       packageForm.participant_limit
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        participant_limit:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          participant_limit:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                   />
                 </label>
 
-                <label className="wide">
-                  Maelezo ya Kifurushi
+                <label className="package-wide">
+                  Maelezo ya
+                  Kifurushi
 
                   <textarea
-                    rows="3"
+                    rows="4"
                     value={
                       packageForm.description
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        description:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          description:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                   />
                 </label>
 
-                <label className="wide">
-                  Vitu Vilivyojumuishwa
+                <label className="package-wide">
+                  Vitu
+                  Vilivyojumuishwa
 
                   <textarea
-                    rows="3"
+                    rows="4"
                     value={
                       packageForm.included_items
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        included_items:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          included_items:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                     placeholder="Mfano: Meza 1 + Kiti 1"
                   />
@@ -1363,45 +2692,56 @@ export default function Admin() {
                     value={
                       packageForm.display_order
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        display_order:
-                          e.target.value,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          display_order:
+                            event
+                              .target
+                              .value,
+                        }
+                      )
                     }
                   />
                 </label>
 
-                <label className="active-check">
+                <label className="checkbox-line">
                   <input
                     type="checkbox"
                     checked={
                       packageForm.is_active
                     }
-                    onChange={(e) =>
-                      setPackageForm({
-                        ...packageForm,
-                        is_active:
-                          e.target.checked,
-                      })
+                    onChange={(event) =>
+                      setPackageForm(
+                        {
+                          ...packageForm,
+
+                          is_active:
+                            event
+                              .target
+                              .checked,
+                        }
+                      )
                     }
                   />
 
-                  Kifurushi kinaonekana
-                  kwa waombaji
+                  Kifurushi
+                  kinaonekana kwa
+                  waombaji
                 </label>
 
-                <div className="package-buttons wide">
+                <div className="package-buttons package-wide">
                   <button
-                    className="save-package"
+                    className="primary-button"
                     type="submit"
                     disabled={
                       savingPackage
                     }
                   >
                     {savingPackage
-                      ? "Inahifadhi..."
+                      ? "INAHIFADHI..."
                       : editingPackageId
                       ? "HIFADHI MABADILIKO"
                       : "ONGEZA KIFURUSHI"}
@@ -1409,8 +2749,8 @@ export default function Admin() {
 
                   {editingPackageId && (
                     <button
+                      className="secondary-button"
                       type="button"
-                      className="cancel-package"
                       onClick={
                         cancelPackageEdit
                       }
@@ -1422,46 +2762,59 @@ export default function Admin() {
               </form>
             </section>
 
-            <section className="admin-panel">
+            <section className="panel">
               <div className="panel-header">
                 <div>
                   <h2>
-                    Vifurushi vya Ushiriki
+                    Vifurushi vya
+                    Ushiriki
                   </h2>
 
                   <p>
-                    Badilisha bei na
-                    maelezo bila kugusa
-                    GitHub.
+                    Vifurushi
+                    vinavyopatikana
+                    kwenye fomu.
                   </p>
                 </div>
 
                 <button
-                  onClick={loadPackages}
+                  onClick={
+                    loadPackages
+                  }
                 >
                   ↻ Refresh
                 </button>
               </div>
 
-              <div className="package-list">
-                {packages.map((pkg) => (
-                  <div
-                    className={`package-admin-card ${
-                      !pkg.is_active
-                        ? "inactive"
-                        : ""
-                    }`}
-                    key={pkg.id}
-                  >
-                    <div>
-                      <span className="package-status">
+              <div className="package-grid">
+                {packages.map(
+                  (pkg) => (
+                    <article
+                      key={
+                        pkg.id
+                      }
+                      className={`package-card ${
+                        !pkg.is_active
+                          ? "package-disabled"
+                          : ""
+                      }`}
+                    >
+                      <span
+                        className={
+                          pkg.is_active
+                            ? "badge-active"
+                            : "badge-inactive"
+                        }
+                      >
                         {pkg.is_active
-                          ? "KINAONEKANA"
-                          : "KIMEZIMWA"}
+                          ? "ACTIVE"
+                          : "INACTIVE"}
                       </span>
 
                       <h3>
-                        {pkg.name}
+                        {
+                          pkg.name
+                        }
                       </h3>
 
                       <strong className="package-price">
@@ -1498,75 +2851,92 @@ export default function Admin() {
                           }
                         </p>
                       )}
-                    </div>
 
-                    <div className="package-card-actions">
-                      <button
-                        onClick={() =>
-                          editPackage(pkg)
-                        }
-                      >
-                        Hariri
-                      </button>
+                      <div className="card-actions">
+                        <button
+                          className="primary-small"
+                          onClick={() =>
+                            editPackage(
+                              pkg
+                            )
+                          }
+                        >
+                          Hariri
+                        </button>
 
-                      <button
-                        className={
-                          pkg.is_active
-                            ? "disable"
-                            : "enable"
-                        }
-                        onClick={() =>
-                          togglePackage(
-                            pkg
-                          )
-                        }
-                      >
-                        {pkg.is_active
-                          ? "Zima"
-                          : "Washa"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                        <button
+                          className={
+                            pkg.is_active
+                              ? "danger-small"
+                              : "success-small"
+                          }
+                          onClick={() =>
+                            togglePackage(
+                              pkg
+                            )
+                          }
+                        >
+                          {pkg.is_active
+                            ? "Zima"
+                            : "Washa"}
+                        </button>
+                      </div>
+                    </article>
+                  )
+                )}
               </div>
             </section>
           </>
         )}
 
-        {tab === "reports" && (
+        {/* ===================================================
+            REPORTS
+        =================================================== */}
+
+        {tab ===
+          "reports" && (
           <>
             <section className="stats">
               <StatCard
                 label="Washiriki Wote"
-                value={registrations.length}
+                value={
+                  registrations.length
+                }
               />
 
               <StatCard
                 label="Usajili Leo"
-                value={todayRegistrations}
+                value={
+                  todayCount
+                }
               />
 
               <StatCard
                 label="Kupitia Agents"
-                value={agentRegistrations}
+                value={
+                  agentRegistrationCount
+                }
               />
 
               <StatCard
                 label="Public"
-                value={publicRegistrations}
+                value={
+                  publicRegistrationCount
+                }
               />
             </section>
 
-            <section className="report-money-grid">
+            <section className="money-stats">
               <div>
                 <span>
-                  Thamani ya Usajili
+                  Thamani ya
+                  Usajili
                 </span>
 
                 <strong>
                   TSh{" "}
                   {money(
-                    totalExpectedRevenue
+                    totalRegistrationValue
                   )}
                 </strong>
               </div>
@@ -1580,7 +2950,7 @@ export default function Admin() {
                 <strong>
                   TSh{" "}
                   {money(
-                    paidRevenue
+                    paidRegistrationValue
                   )}
                 </strong>
               </div>
@@ -1591,21 +2961,25 @@ export default function Admin() {
                 </span>
 
                 <strong>
-                  {activeAgents}
+                  {
+                    activeAgentCount
+                  }
                 </strong>
               </div>
             </section>
 
-            <section className="admin-panel">
+            <section className="panel">
               <div className="panel-header">
                 <div>
                   <h2>
-                    Performance ya Agents
+                    Performance ya
+                    Agents
                   </h2>
 
                   <p>
-                    Linganisha usajili
-                    wa agents.
+                    Linganisha
+                    usajili wa kila
+                    agent.
                   </p>
                 </div>
               </div>
@@ -1614,12 +2988,29 @@ export default function Admin() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Agent</th>
-                      <th>Simu</th>
-                      <th>Jumla</th>
-                      <th>Leo</th>
-                      <th>Wamelipa</th>
-                      <th>Hali</th>
+                      <th>
+                        Agent
+                      </th>
+
+                      <th>
+                        Simu
+                      </th>
+
+                      <th>
+                        Jumla
+                      </th>
+
+                      <th>
+                        Leo
+                      </th>
+
+                      <th>
+                        Wamelipa
+                      </th>
+
+                      <th>
+                        Hali
+                      </th>
                     </tr>
                   </thead>
 
@@ -1627,18 +3018,22 @@ export default function Admin() {
                     {agentPerformance.map(
                       (agent) => (
                         <tr
-                          key={agent.id}
+                          key={
+                            agent.id
+                          }
                         >
                           <td>
                             <button
-                              className="agent-link"
+                              className="link-button"
                               onClick={() =>
                                 setSelectedAgent(
                                   agent
                                 )
                               }
                             >
-                              {agent.full_name}
+                              {
+                                agent.full_name
+                              }
                             </button>
 
                             <small>
@@ -1654,24 +3049,30 @@ export default function Admin() {
 
                           <td>
                             <strong>
-                              {agent.total}
+                              {
+                                agent.total
+                              }
                             </strong>
                           </td>
 
                           <td>
-                            {agent.today}
+                            {
+                              agent.today
+                            }
                           </td>
 
                           <td>
-                            {agent.paid}
+                            {
+                              agent.paid
+                            }
                           </td>
 
                           <td>
                             <span
                               className={
                                 agent.is_active
-                                  ? "status-active"
-                                  : "status-inactive"
+                                  ? "badge-active"
+                                  : "badge-inactive"
                               }
                             >
                               {agent.is_active
@@ -1687,33 +3088,41 @@ export default function Admin() {
               </div>
             </section>
 
-            <section className="admin-panel">
+            <section className="panel">
               <div className="panel-header">
                 <div>
                   <h2>
-                    Ripoti kwa Vifurushi
+                    Ripoti kwa
+                    Vifurushi
                   </h2>
 
                   <p>
-                    Idadi ya washiriki
-                    kwa kila kifurushi.
+                    Idadi na thamani
+                    ya usajili kwa
+                    kila kifurushi.
                   </p>
                 </div>
               </div>
 
-              <div className="package-report-grid">
+              <div className="report-grid">
                 {packageReport.map(
                   (item) => (
-                    <div
-                      className="report-package-card"
-                      key={item.name}
+                    <article
+                      className="report-card"
+                      key={
+                        item.name
+                      }
                     >
                       <span>
-                        {item.name}
+                        {
+                          item.name
+                        }
                       </span>
 
                       <strong>
-                        {item.count}
+                        {
+                          item.count
+                        }
                       </strong>
 
                       <small>
@@ -1722,7 +3131,7 @@ export default function Admin() {
                           item.amount
                         )}
                       </small>
-                    </div>
+                    </article>
                   )
                 )}
               </div>
@@ -1730,391 +3139,482 @@ export default function Admin() {
           </>
         )}
 
-        {selected && (
-          <div
-            className="modal-backdrop"
-            onClick={() =>
-              setSelected(null)
+        {/* ===================================================
+            REGISTRATION MODAL
+        =================================================== */}
+
+        {selectedRegistration && (
+          <Modal
+            onClose={() =>
+              setSelectedRegistration(
+                null
+              )
             }
           >
-            <div
-              className="detail-modal"
-              onClick={(e) =>
-                e.stopPropagation()
+            <h2>
+              {
+                selectedRegistration.jina_kamili
               }
-            >
-              <button
-                className="close"
-                onClick={() =>
-                  setSelected(null)
+            </h2>
+
+            <p>
+              {selectedRegistration.jina_biashara ||
+                "Hakuna jina la biashara"}
+            </p>
+
+            <div className="detail-grid">
+              <Info
+                label="Simu"
+                value={
+                  selectedRegistration.namba_simu
                 }
-              >
-                ×
-              </button>
+              />
 
-              <h2>
-                {selected.jina_kamili}
-              </h2>
+              <Info
+                label="Email"
+                value={
+                  selectedRegistration.barua_pepe ||
+                  "—"
+                }
+              />
 
-              <p>
-                {selected.jina_biashara ||
-                  "Hakuna jina la biashara"}
-              </p>
+              <Info
+                label="Mkoa"
+                value={
+                  selectedRegistration.mkoa ||
+                  "—"
+                }
+              />
 
-              <div className="detail-grid">
-                <Info
-                  label="Simu"
-                  value={
-                    selected.namba_simu
-                  }
-                />
+              <Info
+                label="Mji/Wilaya"
+                value={
+                  selectedRegistration.mji_wilaya ||
+                  "—"
+                }
+              />
 
-                <Info
-                  label="Barua Pepe"
-                  value={
-                    selected.barua_pepe ||
-                    "—"
-                  }
-                />
+              <Info
+                label="Agent"
+                value={getAgentName(
+                  selectedRegistration.agent_id
+                )}
+              />
 
-                <Info
-                  label="Mkoa"
-                  value={
-                    selected.mkoa ||
-                    "—"
-                  }
-                />
+              <Info
+                label="Kifurushi"
+                value={
+                  selectedRegistration.package_name ||
+                  "—"
+                }
+              />
 
-                <Info
-                  label="Mji/Wilaya"
-                  value={
-                    selected.mji_wilaya ||
-                    "—"
-                  }
-                />
+              <Info
+                label="Bei"
+                value={
+                  selectedRegistration.package_price
+                    ? `TSh ${money(
+                        selectedRegistration.package_price
+                      )}`
+                    : "—"
+                }
+              />
 
-                <Info
-                  label="Agent"
-                  value={getAgentName(
-                    selected.agent_id
-                  )}
-                />
+              <Info
+                label="VAT"
+                value={
+                  selectedRegistration.package_vat_note ||
+                  "—"
+                }
+              />
 
-                <Info
-                  label="Kifurushi"
-                  value={
-                    selected.package_name ||
-                    "—"
-                  }
-                />
+              <Info
+                label="Ukubwa"
+                value={
+                  selectedRegistration.package_tent_size ||
+                  "—"
+                }
+              />
 
-                <Info
-                  label="Bei"
-                  value={
-                    selected.package_price
-                      ? `TSh ${money(
-                          selected.package_price
-                        )}`
-                      : "—"
-                  }
-                />
+              <Info
+                label="Hali"
+                value={statusLabel(
+                  selectedRegistration.hali_ya_usajili
+                )}
+              />
 
-                <Info
-                  label="Ukubwa"
-                  value={
-                    selected.package_tent_size ||
-                    "—"
-                  }
-                />
+              <Info
+                label="Tarehe"
+                value={formatDate(
+                  selectedRegistration.created_at
+                )}
+              />
+            </div>
 
-                <Info
-                  label="VAT"
-                  value={
-                    selected.package_vat_note ||
-                    "—"
-                  }
-                />
-
-                <Info
-                  label="Hali"
-                  value={
-                    statuses.find(
-                      ([value]) =>
-                        value ===
-                        selected.hali_ya_usajili
-                    )?.[1] || "Mpya"
-                  }
-                />
-              </div>
-
+            <section className="modal-section">
               <h3>
                 Aina ya Ushiriki
               </h3>
 
               <p>
-                {(selected.aina_ushiriki ||
-                  []).join(", ") ||
-                  "—"}
+                {(selectedRegistration.aina_ushiriki ||
+                  []).join(
+                  ", "
+                ) || "—"}
               </p>
+            </section>
 
+            <section className="modal-section">
               <h3>
-                Bidhaa / Huduma
+                Bidhaa /
+                Huduma
               </h3>
 
               <p>
-                {selected.maelezo_bidhaa_huduma ||
+                {selectedRegistration.maelezo_bidhaa_huduma ||
                   "—"}
               </p>
+            </section>
 
-              <div className="modal-actions">
+            <div className="modal-actions">
+              <a
+                href={`https://wa.me/${whatsappNumber(
+                  selectedRegistration.namba_simu
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                WhatsApp
+              </a>
+
+              {selectedRegistration.barua_pepe && (
+                <a
+                  href={`mailto:${selectedRegistration.barua_pepe}`}
+                >
+                  Email
+                </a>
+              )}
+
+              <a
+                href={`tel:${selectedRegistration.namba_simu}`}
+              >
+                Piga Simu
+              </a>
+            </div>
+          </Modal>
+        )}
+
+        {/* ===================================================
+            AGENT MODAL
+        =================================================== */}
+
+        {selectedAgent && (
+          <Modal
+            onClose={() =>
+              setSelectedAgent(
+                null
+              )
+            }
+          >
+            <span
+              className={
+                selectedAgent.is_active
+                  ? "badge-active"
+                  : "badge-inactive"
+              }
+            >
+              {selectedAgent.is_active
+                ? "ACTIVE"
+                : "INACTIVE"}
+            </span>
+
+            <h2>
+              {
+                selectedAgent.full_name
+              }
+            </h2>
+
+            <div className="detail-grid">
+              <Info
+                label="Email"
+                value={
+                  selectedAgent.email ||
+                  "—"
+                }
+              />
+
+              <Info
+                label="Simu"
+                value={
+                  selectedAgent.phone ||
+                  "—"
+                }
+              />
+
+              <Info
+                label="Jumla ya Usajili"
+                value={
+                  getAgentRegistrations(
+                    selectedAgent.id
+                  ).length
+                }
+              />
+
+              <Info
+                label="Usajili Leo"
+                value={
+                  getAgentRegistrations(
+                    selectedAgent.id
+                  ).filter(
+                    (
+                      registration
+                    ) =>
+                      sameDay(
+                        registration.created_at
+                      )
+                  ).length
+                }
+              />
+
+              <Info
+                label="Tarehe ya Kuongezwa"
+                value={formatDate(
+                  selectedAgent.created_at
+                )}
+              />
+
+              <Info
+                label="Agent ID"
+                value={
+                  selectedAgent.id
+                }
+              />
+            </div>
+
+            <section className="modal-section">
+              <h3>
+                Washiriki wa
+                Agent
+              </h3>
+
+              <div className="agent-registration-list">
+                {getAgentRegistrations(
+                  selectedAgent.id
+                ).length ===
+                0 ? (
+                  <p>
+                    Agent huyu
+                    bado hana
+                    usajili.
+                  </p>
+                ) : (
+                  getAgentRegistrations(
+                    selectedAgent.id
+                  ).map(
+                    (
+                      registration
+                    ) => (
+                      <button
+                        key={
+                          registration.id
+                        }
+                        onClick={() => {
+                          setSelectedAgent(
+                            null
+                          );
+
+                          setSelectedRegistration(
+                            registration
+                          );
+                        }}
+                      >
+                        <div>
+                          <strong>
+                            {
+                              registration.jina_kamili
+                            }
+                          </strong>
+
+                          <small>
+                            {registration.jina_biashara ||
+                              "—"}
+                          </small>
+                        </div>
+
+                        <span>
+                          {formatDate(
+                            registration.created_at
+                          )}
+                        </span>
+                      </button>
+                    )
+                  )
+                )}
+              </div>
+            </section>
+
+            <div className="modal-actions">
+              {selectedAgent.phone && (
                 <a
                   href={`https://wa.me/${whatsappNumber(
-                    selected.namba_simu
+                    selectedAgent.phone
                   )}`}
                   target="_blank"
                   rel="noreferrer"
                 >
                   WhatsApp
                 </a>
+              )}
 
-                {selected.barua_pepe && (
-                  <a
-                    href={`mailto:${selected.barua_pepe}`}
-                  >
-                    Tuma Email
-                  </a>
-                )}
-
+              {selectedAgent.email && (
                 <a
-                  href={`tel:${selected.namba_simu}`}
+                  href={`mailto:${selectedAgent.email}`}
                 >
-                  Piga Simu
+                  Email
                 </a>
-              </div>
-            </div>
-          </div>
-        )}
+              )}
 
-        {selectedAgent && (
-          <div
-            className="modal-backdrop"
-            onClick={() =>
-              setSelectedAgent(null)
-            }
-          >
-            <div
-              className="detail-modal"
-              onClick={(e) =>
-                e.stopPropagation()
-              }
-            >
               <button
-                className="close"
-                onClick={() =>
-                  setSelectedAgent(null)
-                }
-              >
-                ×
-              </button>
-
-              <span
                 className={
                   selectedAgent.is_active
-                    ? "status-active"
-                    : "status-inactive"
+                    ? "danger-small"
+                    : "success-small"
+                }
+                onClick={() =>
+                  toggleAgent(
+                    selectedAgent
+                  )
                 }
               >
                 {selectedAgent.is_active
-                  ? "ACTIVE"
-                  : "INACTIVE"}
-              </span>
-
-              <h2>
-                {selectedAgent.full_name}
-              </h2>
-
-              <div className="detail-grid">
-                <Info
-                  label="Email"
-                  value={
-                    selectedAgent.email ||
-                    "—"
-                  }
-                />
-
-                <Info
-                  label="Simu"
-                  value={
-                    selectedAgent.phone ||
-                    "—"
-                  }
-                />
-
-                <Info
-                  label="Jumla ya Usajili"
-                  value={
-                    getAgentRegistrations(
-                      selectedAgent.id
-                    ).length
-                  }
-                />
-
-                <Info
-                  label="Usajili Leo"
-                  value={
-                    getAgentRegistrations(
-                      selectedAgent.id
-                    ).filter((r) =>
-                      sameDay(
-                        r.created_at
-                      )
-                    ).length
-                  }
-                />
-
-                <Info
-                  label="Tarehe ya Kuongezwa"
-                  value={formatDate(
-                    selectedAgent.created_at
-                  )}
-                />
-
-                <Info
-                  label="Agent ID"
-                  value={
-                    selectedAgent.id
-                  }
-                />
-              </div>
-
-              <h3>
-                Washiriki wa Agent
-              </h3>
-
-              <div className="agent-registration-list">
-                {getAgentRegistrations(
-                  selectedAgent.id
-                ).length === 0 ? (
-                  <p>
-                    Agent huyu bado
-                    hana usajili.
-                  </p>
-                ) : (
-                  getAgentRegistrations(
-                    selectedAgent.id
-                  ).map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        setSelectedAgent(
-                          null
-                        );
-                        setSelected(r);
-                      }}
-                    >
-                      <div>
-                        <strong>
-                          {
-                            r.jina_kamili
-                          }
-                        </strong>
-
-                        <small>
-                          {r.jina_biashara ||
-                            "—"}
-                        </small>
-                      </div>
-
-                      <span>
-                        {formatDate(
-                          r.created_at
-                        )}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-
-              <div className="modal-actions">
-                {selectedAgent.phone && (
-                  <a
-                    href={`https://wa.me/${whatsappNumber(
-                      selectedAgent.phone
-                    )}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    WhatsApp
-                  </a>
-                )}
-
-                {selectedAgent.email && (
-                  <a
-                    href={`mailto:${selectedAgent.email}`}
-                  >
-                    Email
-                  </a>
-                )}
-
-                <button
-                  className={
-                    selectedAgent.is_active
-                      ? "danger-button"
-                      : "success-button"
-                  }
-                  onClick={() =>
-                    toggleAgent(
-                      selectedAgent
-                    )
-                  }
-                >
-                  {selectedAgent.is_active
-                    ? "Zima Agent"
-                    : "Washa Agent"}
-                </button>
-              </div>
+                  ? "Zima Agent"
+                  : "Washa Agent"}
+              </button>
             </div>
-          </div>
+          </Modal>
         )}
       </main>
     </>
   );
 }
 
+/* =========================================================
+   STAT CARD
+========================================================= */
+
 function StatCard({
   label,
   value,
 }) {
   return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <article className="stat-card">
+      <span>
+        {label}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
+    </article>
   );
 }
+
+/* =========================================================
+   INFO
+========================================================= */
 
 function Info({
   label,
   value,
 }) {
   return (
-    <div className="info">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="info-box">
+      <span>
+        {label}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
     </div>
   );
 }
 
+/* =========================================================
+   EMPTY STATE
+========================================================= */
+
+function EmptyState({
+  text,
+}) {
+  return (
+    <div className="empty-state">
+      {text}
+    </div>
+  );
+}
+
+/* =========================================================
+   MODAL
+========================================================= */
+
+function Modal({
+  children,
+  onClose,
+}) {
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={onClose}
+    >
+      <div
+        className="modal"
+        onMouseDown={(event) =>
+          event.stopPropagation()
+        }
+      >
+        <button
+          type="button"
+          className="modal-close"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   STYLES
+========================================================= */
+
 const adminStyles = `
+:root {
+  color-scheme: light;
+}
+
 * {
   box-sizing: border-box;
 }
 
+html {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f3f4f6;
-  color: #1f2937;
+  min-height: 100vh;
+  background: #f3f5f4;
+  color: #17201b;
+  font-family:
+    Inter,
+    Arial,
+    Helvetica,
+    sans-serif;
 }
 
 button,
@@ -2124,221 +3624,485 @@ select {
   font: inherit;
 }
 
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
 button {
   cursor: pointer;
 }
 
-.admin-login-page {
+button:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+/* =========================================================
+   AUTH
+========================================================= */
+
+.auth-page {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 20px;
-  background: linear-gradient(135deg,#14532d,#166534);
+  padding: 24px;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(250,204,21,.16),
+      transparent 25%
+    ),
+    linear-gradient(
+      145deg,
+      #061b10,
+      #0d4325 60%,
+      #166534
+    );
 }
 
-.login-card {
-  width: min(460px,100%);
-  background: white;
+.auth-card {
+  width: min(
+    460px,
+    100%
+  );
+  background: #ffffff;
+  border-radius: 22px;
   padding: 34px;
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  box-shadow:
+    0 30px 90px
+    rgba(0,0,0,.30);
 }
 
-.admin-badge {
-  display: inline-block;
-  padding: 7px 12px;
-  border-radius: 99px;
+.mfa-card {
+  width: min(
+    520px,
+    100%
+  );
+}
+
+.security-badge {
+  display: inline-flex;
+  align-items: center;
   background: #facc15;
-  color: #111827;
-  font-weight: 800;
+  color: #17201b;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .06em;
 }
 
-.login-card h1 {
+.auth-card h1 {
+  margin: 18px 0 5px;
   color: #14532d;
 }
 
-.login-card h2 {
-  font-size: 18px;
-  font-weight: 600;
+.auth-card h2 {
+  margin: 8px 0;
+  font-size: 19px;
 }
 
-.login-card label {
+.auth-description {
+  margin:
+    8px 0 24px;
+  color: #6b7280;
+  line-height: 1.55;
+}
+
+.auth-card label {
   display: block;
   margin: 16px 0;
-  font-weight: 700;
-}
-
-.login-card input {
-  width: 100%;
-  margin-top: 7px;
-  padding: 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
-}
-
-.login-card button {
-  width: 100%;
-  padding: 15px;
-  border: 0;
-  border-radius: 10px;
-  background: #166534;
-  color: white;
   font-weight: 800;
 }
 
-.login-card > a {
+.auth-card input {
   display: block;
-  text-align: center;
-  margin-top: 18px;
-  color: #166534;
+  width: 100%;
+  margin-top: 8px;
+  border:
+    1px solid
+    #d1d5db;
+  border-radius: 11px;
+  padding: 14px;
+  background: white;
 }
 
-.admin-error,
+.auth-card input:focus {
+  outline: none;
+  border-color: #166534;
+  box-shadow:
+    0 0 0 3px
+    rgba(22,101,52,.12);
+}
+
+.primary-auth-button {
+  width: 100%;
+  border: 0;
+  border-radius: 11px;
+  background: #166534;
+  color: white;
+  padding: 15px;
+  font-weight: 900;
+  margin-top: 6px;
+}
+
+.secondary-auth-button {
+  width: 100%;
+  border:
+    1px solid
+    #166534;
+  border-radius: 11px;
+  background: white;
+  color: #166534;
+  padding: 13px;
+  font-weight: 800;
+  margin-top: 12px;
+}
+
+.logout-auth-button {
+  width: 100%;
+  border: 0;
+  border-radius: 11px;
+  background: #f3f4f6;
+  color: #374151;
+  padding: 13px;
+  font-weight: 800;
+  margin-top: 10px;
+}
+
+.back-link {
+  display: block;
+  margin-top: 20px;
+  text-align: center;
+  color: #166534;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.error-box,
 .top-error {
   background: #fef2f2;
-  border: 1px solid #fecaca;
+  border:
+    1px solid
+    #fecaca;
   color: #991b1b;
-  padding: 12px;
+  padding: 12px 14px;
   border-radius: 10px;
+  line-height: 1.45;
 }
 
-.admin-error {
-  margin: 12px 0;
+.error-box {
+  margin: 16px 0;
 }
 
-.top-error {
-  margin: 20px max(20px,5vw) 0;
+/* =========================================================
+   MFA
+========================================================= */
+
+.qr-container {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #f9fafb;
+  border:
+    1px solid
+    #e5e7eb;
+  border-radius: 16px;
+  margin: 18px 0;
 }
+
+.qr-container img {
+  display: block;
+  width: min(
+    260px,
+    100%
+  );
+  height: auto;
+}
+
+.secret-box {
+  padding: 14px;
+  border-radius: 11px;
+  background: #f9fafb;
+  border:
+    1px solid
+    #e5e7eb;
+  margin: 14px 0;
+}
+
+.secret-box span {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 7px;
+}
+
+.secret-box code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #14532d;
+  font-weight: 800;
+}
+
+.security-note {
+  background: #f0fdf4;
+  border:
+    1px solid
+    #bbf7d0;
+  color: #166534;
+  padding: 13px;
+  border-radius: 10px;
+  line-height: 1.5;
+}
+
+.mfa-code {
+  text-align: center;
+  font-size: 24px !important;
+  font-weight: 900;
+  letter-spacing: .30em;
+}
+
+/* =========================================================
+   LOADING
+========================================================= */
 
 .admin-loading {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  font-size: 20px;
+  align-content: center;
+  background: #f3f5f4;
+  color: #14532d;
+  font-weight: 800;
 }
+
+.loader-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border:
+    3px solid
+    #d1fae5;
+  border-top-color:
+    #166534;
+  animation:
+    adminSpin
+    .8s linear infinite;
+}
+
+@keyframes adminSpin {
+  to {
+    transform:
+      rotate(360deg);
+  }
+}
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
 
 .dashboard {
   min-height: 100vh;
 }
 
 .admin-header {
-  background: #14532d;
+  background:
+    linear-gradient(
+      135deg,
+      #0b3a20,
+      #14532d
+    );
   color: white;
-  padding: 24px max(20px,5vw);
+  padding:
+    24px
+    max(20px,5vw);
   display: flex;
-  justify-content: space-between;
+  justify-content:
+    space-between;
   align-items: center;
+  gap: 20px;
 }
 
 .admin-header h1 {
-  margin: 4px 0 0;
+  margin:
+    5px 0 0;
+}
+
+.admin-header small {
+  opacity: .8;
+}
+
+.secure-session {
+  display: inline-flex;
+  margin-top: 10px;
+  padding: 5px 9px;
+  background:
+    rgba(255,255,255,.12);
+  border:
+    1px solid
+    rgba(255,255,255,.18);
+  border-radius: 999px;
+  font-size: 11px;
+  color: #bbf7d0;
 }
 
 .header-actions {
   display: flex;
-  gap: 10px;
+  gap: 9px;
   flex-wrap: wrap;
 }
 
 .header-actions a,
 .header-actions button {
-  border: 1px solid rgba(255,255,255,.3);
-  background: rgba(255,255,255,.1);
+  border:
+    1px solid
+    rgba(255,255,255,.28);
+  background:
+    rgba(255,255,255,.10);
   color: white;
-  text-decoration: none;
-  padding: 11px 15px;
   border-radius: 9px;
+  text-decoration: none;
+  padding: 10px 14px;
 }
+
+.top-error {
+  margin:
+    20px
+    max(20px,5vw)
+    0;
+}
+
+/* =========================================================
+   TABS
+========================================================= */
 
 .admin-tabs {
   display: flex;
-  gap: 10px;
-  padding: 20px max(20px,5vw) 0;
+  gap: 9px;
+  padding:
+    20px
+    max(20px,5vw)
+    0;
   overflow-x: auto;
 }
 
 .admin-tabs button {
   border: 0;
-  padding: 12px 20px;
   border-radius: 10px;
-  font-weight: 800;
-  white-space: nowrap;
   background: #e5e7eb;
+  color: #374151;
+  padding: 12px 20px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
-.admin-tabs .active {
+.admin-tabs button.active {
   background: #166534;
   color: white;
 }
 
+/* =========================================================
+   STATS
+========================================================= */
+
 .stats {
   display: grid;
-  grid-template-columns: repeat(4,1fr);
+  grid-template-columns:
+    repeat(4,1fr);
   gap: 15px;
-  padding: 25px max(20px,5vw);
+  padding:
+    25px
+    max(20px,5vw);
 }
 
-.stats div {
+.stat-card {
   background: white;
+  border-radius: 15px;
   padding: 20px;
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.03);
+  border:
+    1px solid
+    #ecefec;
+  box-shadow:
+    0 3px 12px
+    rgba(0,0,0,.03);
 }
 
-.stats span {
+.stat-card span {
   color: #6b7280;
 }
 
-.stats strong {
+.stat-card strong {
   display: block;
-  font-size: 30px;
-  margin-top: 8px;
   color: #14532d;
+  font-size: 31px;
+  margin-top: 8px;
 }
 
-.admin-panel,
-.package-editor {
-  margin: 25px max(20px,5vw);
+/* =========================================================
+   PANEL
+========================================================= */
+
+.panel {
+  margin:
+    25px
+    max(20px,5vw);
+  padding: 23px;
   background: white;
-  border-radius: 16px;
-  padding: 22px;
+  border-radius: 17px;
+  border:
+    1px solid
+    #ecefec;
 }
 
 .panel-header {
   display: flex;
-  justify-content: space-between;
+  justify-content:
+    space-between;
   align-items: center;
-  gap: 15px;
+  gap: 16px;
 }
 
 .panel-header h2 {
-  margin-bottom: 5px;
+  margin:
+    0 0 5px;
 }
 
 .panel-header p {
+  margin: 0;
   color: #6b7280;
 }
 
 .panel-header > button {
-  border: 1px solid #d1d5db;
+  border:
+    1px solid
+    #d1d5db;
   background: white;
   padding: 9px 13px;
   border-radius: 8px;
 }
 
+/* =========================================================
+   TOOLBAR
+========================================================= */
+
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content:
+    space-between;
   gap: 15px;
   margin: 22px 0;
 }
 
 .toolbar input {
-  width: min(500px,100%);
+  width:
+    min(520px,100%);
+  border:
+    1px solid
+    #d1d5db;
+  border-radius: 10px;
   padding: 12px 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 9px;
 }
 
 .toolbar span {
@@ -2346,438 +4110,481 @@ button {
   white-space: nowrap;
 }
 
+/* =========================================================
+   TABLE
+========================================================= */
+
 .table-wrap {
   overflow-x: auto;
 }
 
 table {
   width: 100%;
-  border-collapse: collapse;
-  min-width: 1050px;
+  min-width: 1080px;
+  border-collapse:
+    collapse;
 }
 
 th,
 td {
   text-align: left;
-  padding: 14px 10px;
-  border-bottom: 1px solid #e5e7eb;
   vertical-align: middle;
+  padding: 14px 10px;
+  border-bottom:
+    1px solid
+    #e5e7eb;
 }
 
 th {
   color: #374151;
+  font-size: 13px;
 }
 
 td small {
   display: block;
+  margin-top: 4px;
   color: #6b7280;
-  margin-top: 3px;
 }
 
 td select {
+  min-width: 190px;
   width: 100%;
-  min-width: 180px;
-  padding: 10px;
+  border:
+    1px solid
+    #d1d5db;
   border-radius: 9px;
-  border: 1px solid #d1d5db;
   background: white;
+  padding: 9px;
 }
 
-.actions {
+.row-actions {
   display: flex;
   gap: 7px;
 }
 
-.actions a,
-.actions button {
+.row-actions button,
+.row-actions a {
   border: 0;
+  border-radius: 7px;
   background: #166534;
   color: white;
-  padding: 8px 10px;
-  border-radius: 7px;
   text-decoration: none;
+  padding: 8px 10px;
 }
 
-.agent-link {
+/* =========================================================
+   LINKS / BADGES
+========================================================= */
+
+.link-button {
   border: 0;
-  background: none;
+  background: transparent;
   color: #166534;
   padding: 0;
-  font-weight: 800;
-  text-align: left;
+  font-weight: 900;
 }
 
 .public-badge {
-  display: inline-block;
+  display: inline-flex;
   background: #e5e7eb;
   color: #374151;
-  padding: 5px 8px;
+  padding: 5px 9px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
 }
 
-.agent-note {
-  padding: 14px;
-  background: #fefce8;
-  border: 1px solid #fde68a;
-  border-radius: 10px;
+.badge-active,
+.badge-inactive {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.badge-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* =========================================================
+   AGENT
+========================================================= */
+
+.agent-information {
   margin: 18px 0;
-  color: #713f12;
+  padding: 14px;
+  background: #f0fdf4;
+  border:
+    1px solid
+    #bbf7d0;
+  border-radius: 11px;
+}
+
+.agent-information p {
+  margin:
+    5px 0 0;
+  color: #166534;
 }
 
 .agent-grid {
   display: grid;
-  grid-template-columns: repeat(3,1fr);
+  grid-template-columns:
+    repeat(3,1fr);
   gap: 16px;
 }
 
-.agent-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
+.agent-card,
+.package-card {
   padding: 20px;
+  border:
+    1px solid
+    #e5e7eb;
+  border-radius: 14px;
 }
 
-.agent-card-head {
+.agent-card-header {
   display: flex;
-  justify-content: space-between;
+  justify-content:
+    space-between;
   gap: 15px;
 }
 
 .agent-card h3 {
-  margin: 10px 0 4px;
+  margin:
+    10px 0 4px;
 }
 
 .agent-card p {
-  margin: 8px 0;
   color: #6b7280;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.agent-total {
-  font-size: 32px;
+.agent-count {
   color: #14532d;
+  font-size: 32px;
 }
 
-.status-active,
-.status-inactive {
-  display: inline-block;
-  font-size: 11px;
-  padding: 5px 8px;
-  border-radius: 999px;
-  font-weight: 800;
-}
-
-.status-active {
-  color: #166534;
-  background: #dcfce7;
-}
-
-.status-inactive {
-  color: #991b1b;
-  background: #fee2e2;
-}
-
-.agent-mini-stats {
+.agent-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns:
+    1fr 1fr;
   gap: 10px;
   margin: 18px 0;
 }
 
-.agent-mini-stats div {
+.agent-stats div {
   background: #f9fafb;
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 12px;
 }
 
-.agent-mini-stats span {
+.agent-stats span {
   display: block;
   color: #6b7280;
   font-size: 12px;
 }
 
-.agent-mini-stats strong {
+.agent-stats strong {
   display: block;
-  font-size: 22px;
   color: #14532d;
-  margin-top: 4px;
+  font-size: 22px;
+  margin-top: 3px;
 }
 
-.agent-card-actions,
-.package-card-actions {
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+.card-actions,
+.package-buttons,
+.modal-actions {
   display: flex;
-  gap: 10px;
+  gap: 9px;
   flex-wrap: wrap;
 }
 
-.agent-card-actions button,
-.package-card-actions button {
+.primary-small,
+.danger-small,
+.success-small,
+.primary-button,
+.secondary-button {
   border: 0;
-  padding: 10px 14px;
   border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 800;
 }
 
-.agent-card-actions button:first-child,
-.package-card-actions button:first-child {
+.primary-small,
+.primary-button {
   background: #166534;
   color: white;
 }
 
-.danger-button {
-  background: #fee2e2 !important;
-  color: #991b1b !important;
-  border: 0 !important;
-  padding: 10px 14px !important;
-  border-radius: 8px !important;
-}
-
-.success-button {
-  background: #dcfce7 !important;
-  color: #166534 !important;
-  border: 0 !important;
-  padding: 10px 14px !important;
-  border-radius: 8px !important;
-}
-
-.package-form {
-  display: grid;
-  grid-template-columns: repeat(2,1fr);
-  gap: 16px;
-}
-
-.package-form label {
-  font-weight: 700;
-}
-
-.package-form input,
-.package-form textarea {
-  width: 100%;
-  margin-top: 7px;
-  padding: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 9px;
-}
-
-.package-form .wide {
-  grid-column: 1 / -1;
-}
-
-.active-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.active-check input {
-  width: auto;
-}
-
-.package-buttons {
-  display: flex;
-  gap: 10px;
-}
-
-.save-package {
-  background: #166534;
-  color: white;
-  border: 0;
-  padding: 13px 18px;
-  border-radius: 9px;
-  font-weight: 800;
-}
-
-.cancel-package {
-  border: 1px solid #d1d5db;
-  background: white;
-  padding: 13px 18px;
-  border-radius: 9px;
-}
-
-.package-list {
-  display: grid;
-  grid-template-columns: repeat(2,1fr);
-  gap: 16px;
-}
-
-.package-admin-card {
-  border: 1px solid #e5e7eb;
-  padding: 20px;
-  border-radius: 14px;
-}
-
-.package-admin-card.inactive {
-  opacity: .55;
-}
-
-.package-status {
-  font-size: 11px;
-  background: #dcfce7;
-  color: #166534;
-  padding: 5px 8px;
-  border-radius: 99px;
-  font-weight: 800;
-}
-
-.package-price {
-  display: block;
-  font-size: 22px;
-  color: #14532d;
-  margin: 8px 0;
-}
-
-.package-card-actions .disable {
+.danger-small {
   background: #fee2e2;
   color: #991b1b;
 }
 
-.package-card-actions .enable {
+.success-small {
   background: #dcfce7;
   color: #166534;
 }
 
-.report-money-grid {
-  display: grid;
-  grid-template-columns: repeat(3,1fr);
-  gap: 15px;
-  margin: 0 max(20px,5vw) 25px;
+.secondary-button {
+  background: #f3f4f6;
+  color: #374151;
 }
 
-.report-money-grid > div {
-  background: #14532d;
-  color: white;
+/* =========================================================
+   PACKAGE FORM
+========================================================= */
+
+.package-form {
+  display: grid;
+  grid-template-columns:
+    repeat(2,1fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.package-form label {
+  font-weight: 800;
+}
+
+.package-form input,
+.package-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  border:
+    1px solid
+    #d1d5db;
+  border-radius: 9px;
+  padding: 12px;
+}
+
+.package-wide {
+  grid-column:
+    1 / -1;
+}
+
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.checkbox-line input {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+}
+
+/* =========================================================
+   PACKAGE GRID
+========================================================= */
+
+.package-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2,1fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.package-disabled {
+  opacity: .58;
+}
+
+.package-price {
+  display: block;
+  margin: 8px 0;
+  color: #14532d;
+  font-size: 22px;
+}
+
+/* =========================================================
+   REPORTS
+========================================================= */
+
+.money-stats {
+  display: grid;
+  grid-template-columns:
+    repeat(3,1fr);
+  gap: 15px;
+  margin:
+    0
+    max(20px,5vw)
+    25px;
+}
+
+.money-stats > div {
   padding: 22px;
   border-radius: 14px;
+  background: #14532d;
+  color: white;
 }
 
-.report-money-grid span {
+.money-stats span {
   display: block;
-  opacity: .8;
+  opacity: .80;
 }
 
-.report-money-grid strong {
+.money-stats strong {
   display: block;
-  margin-top: 10px;
-  font-size: 26px;
+  margin-top: 9px;
+  font-size: 25px;
 }
 
-.package-report-grid {
+.report-grid {
   display: grid;
-  grid-template-columns: repeat(3,1fr);
+  grid-template-columns:
+    repeat(3,1fr);
   gap: 15px;
 }
 
-.report-package-card {
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+.report-card {
   padding: 18px;
+  border:
+    1px solid
+    #e5e7eb;
   border-radius: 12px;
+  background: #f9fafb;
 }
 
-.report-package-card span {
+.report-card span {
   display: block;
   color: #6b7280;
 }
 
-.report-package-card strong {
+.report-card strong {
   display: block;
+  margin: 8px 0;
   color: #14532d;
   font-size: 32px;
-  margin: 8px 0;
 }
 
-.report-package-card small {
+.report-card small {
   color: #6b7280;
 }
+
+/* =========================================================
+   MODAL
+========================================================= */
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.55);
+  z-index: 9999;
   display: grid;
   place-items: center;
   padding: 20px;
-  z-index: 9999;
+  background:
+    rgba(0,0,0,.58);
 }
 
-.detail-modal {
+.modal {
   position: relative;
-  width: min(760px,100%);
+  width:
+    min(780px,100%);
   max-height: 90vh;
-  overflow: auto;
+  overflow-y: auto;
   background: white;
-  padding: 28px;
   border-radius: 18px;
+  padding: 28px;
+  box-shadow:
+    0 30px 100px
+    rgba(0,0,0,.28);
 }
 
-.close {
+.modal-close {
   position: absolute;
-  right: 18px;
-  top: 12px;
+  top: 10px;
+  right: 16px;
   border: 0;
-  background: none;
-  font-size: 30px;
+  background: transparent;
+  font-size: 32px;
 }
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(2,1fr);
+  grid-template-columns:
+    repeat(2,1fr);
   gap: 12px;
   margin-top: 20px;
 }
 
-.info {
-  background: #f9fafb;
+.info-box {
   padding: 13px;
   border-radius: 9px;
+  background: #f9fafb;
   overflow: hidden;
 }
 
-.info span {
+.info-box span {
   display: block;
   color: #6b7280;
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.info strong {
+.info-box strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 5px;
   overflow-wrap: anywhere;
 }
 
+.modal-section {
+  margin-top: 22px;
+}
+
+.modal-section h3 {
+  margin-bottom: 6px;
+}
+
 .modal-actions {
-  display: flex;
-  gap: 10px;
   margin-top: 24px;
-  flex-wrap: wrap;
 }
 
 .modal-actions a,
 .modal-actions button {
+  border: 0;
+  border-radius: 8px;
   background: #166534;
   color: white;
   text-decoration: none;
-  padding: 11px 15px;
-  border-radius: 8px;
-  border: 0;
+  padding: 10px 14px;
 }
+
+/* =========================================================
+   AGENT REGISTRATION LIST
+========================================================= */
 
 .agent-registration-list {
   display: grid;
   gap: 8px;
-  margin-top: 15px;
 }
 
-.agent-registration-list > button {
+.agent-registration-list button {
   width: 100%;
-  border: 1px solid #e5e7eb;
+  border:
+    1px solid
+    #e5e7eb;
+  border-radius: 9px;
   background: #f9fafb;
   padding: 12px;
-  border-radius: 9px;
   display: flex;
-  justify-content: space-between;
-  text-align: left;
+  justify-content:
+    space-between;
+  align-items: center;
   gap: 15px;
+  text-align: left;
 }
 
 .agent-registration-list small {
@@ -2786,70 +4593,105 @@ td select {
   margin-top: 4px;
 }
 
-.empty {
+/* =========================================================
+   EMPTY
+========================================================= */
+
+.empty-state {
   padding: 40px;
   text-align: center;
   color: #6b7280;
 }
 
-@media(max-width:1000px) {
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (
+  max-width: 1000px
+) {
   .agent-grid,
-  .package-report-grid {
-    grid-template-columns: repeat(2,1fr);
+  .report-grid {
+    grid-template-columns:
+      repeat(2,1fr);
   }
 }
 
-@media(max-width:800px) {
-  .stats,
-  .package-list,
-  .package-form,
-  .report-money-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
+@media (
+  max-width: 800px
+) {
   .admin-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 15px;
+    flex-direction:
+      column;
+    align-items:
+      flex-start;
   }
-}
 
-@media(max-width:600px) {
   .stats,
-  .package-list,
+  .money-stats,
   .package-form,
-  .detail-grid,
-  .agent-grid,
-  .package-report-grid,
-  .report-money-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .package-form .wide {
-    grid-column: auto;
-  }
-
-  .toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .toolbar span {
-    white-space: normal;
-  }
-
-  .panel-header {
-    align-items: flex-start;
+  .package-grid {
+    grid-template-columns:
+      repeat(2,1fr);
   }
 
   .header-actions {
     width: 100%;
+  }
+}
+
+@media (
+  max-width: 600px
+) {
+  .auth-page {
+    padding: 15px;
+  }
+
+  .auth-card {
+    padding: 24px;
+  }
+
+  .stats,
+  .money-stats,
+  .agent-grid,
+  .package-form,
+  .package-grid,
+  .report-grid,
+  .detail-grid {
+    grid-template-columns:
+      1fr;
+  }
+
+  .package-wide {
+    grid-column: auto;
+  }
+
+  .toolbar {
+    flex-direction:
+      column;
+    align-items:
+      stretch;
+  }
+
+  .toolbar span {
+    white-space:
+      normal;
+  }
+
+  .panel-header {
+    align-items:
+      flex-start;
   }
 
   .header-actions a,
   .header-actions button {
     flex: 1;
     text-align: center;
+  }
+
+  .row-actions {
+    flex-direction:
+      column;
   }
 }
 `;
