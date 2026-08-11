@@ -2026,6 +2026,299 @@ export default function Admin() {
   }
 
  
+  async function sendTicketWhatsApp(ticket) {
+    const registration =
+      getRegistration(ticket.registration_id);
+
+    if (!registration?.namba_simu) {
+      alert("Namba ya simu haijapatikana.");
+      return;
+    }
+
+    try {
+      const participantName =
+        registration?.jina_kamili || "Mshiriki";
+
+      const ticketNumber =
+        ticket?.ticket_number || "—";
+
+      const qrSvg =
+        qrSvgString(ticket.qr_token);
+
+      const qrBlob = new Blob(
+        [qrSvg],
+        {
+          type: "image/svg+xml;charset=utf-8",
+        }
+      );
+
+      const qrUrl =
+        URL.createObjectURL(qrBlob);
+
+      const qrImage = new Image();
+
+      const pngBlob =
+        await new Promise(
+          (resolve, reject) => {
+            qrImage.onload = () => {
+              const canvas =
+                document.createElement("canvas");
+
+              canvas.width = 1000;
+              canvas.height = 1200;
+
+              const ctx =
+                canvas.getContext("2d");
+
+              if (!ctx) {
+                URL.revokeObjectURL(qrUrl);
+                reject(
+                  new Error(
+                    "Canvas haijapatikana."
+                  )
+                );
+                return;
+              }
+
+              // Background
+              ctx.fillStyle = "#f3f5f4";
+              ctx.fillRect(
+                0,
+                0,
+                canvas.width,
+                canvas.height
+              );
+
+              // Ticket card
+              ctx.fillStyle = "#ffffff";
+              ctx.fillRect(
+                60,
+                60,
+                880,
+                1080
+              );
+
+              // Header
+              ctx.fillStyle = "#126333";
+              ctx.fillRect(
+                60,
+                60,
+                880,
+                230
+              );
+
+              ctx.textAlign = "center";
+
+              ctx.fillStyle = "#ffd21f";
+              ctx.font = "bold 26px Arial";
+              ctx.fillText(
+                "OFFICIAL ENTRY TICKET",
+                500,
+                115
+              );
+
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 44px Arial";
+              ctx.fillText(
+                "MWANZA CHEREHANI",
+                500,
+                180
+              );
+              ctx.fillText(
+                "FESTIVAL 2026",
+                500,
+                235
+              );
+
+              // Ticket number
+              ctx.fillStyle = "#68746e";
+              ctx.font = "bold 22px Arial";
+              ctx.fillText(
+                "TICKET NUMBER",
+                500,
+                345
+              );
+
+              ctx.fillStyle = "#111c17";
+              ctx.font = "bold 50px Arial";
+              ctx.fillText(
+                ticketNumber,
+                500,
+                405
+              );
+
+              // Participant
+              ctx.fillStyle = "#68746e";
+              ctx.font = "bold 22px Arial";
+              ctx.fillText(
+                "MSHIRIKI",
+                500,
+                470
+              );
+
+              ctx.fillStyle = "#111c17";
+              ctx.font = "bold 34px Arial";
+              ctx.fillText(
+                participantName,
+                500,
+                520,
+                820
+              );
+
+              ctx.fillStyle = "#59665f";
+              ctx.font = "22px Arial";
+              ctx.fillText(
+                registration?.namba_simu || "",
+                500,
+                560
+              );
+
+              // QR background
+              ctx.fillStyle = "#eafff0";
+              ctx.fillRect(
+                250,
+                610,
+                500,
+                410
+              );
+
+              // QR code
+              ctx.drawImage(
+                qrImage,
+                325,
+                645,
+                350,
+                350
+              );
+
+              ctx.fillStyle = "#126333";
+              ctx.font = "bold 28px Arial";
+              ctx.fillText(
+                "SCAN TO CHECK IN",
+                500,
+                1065
+              );
+
+              ctx.fillStyle = "#59665f";
+              ctx.font = "20px Arial";
+              ctx.fillText(
+                "Tiketi hii inaweza kutumika mara moja tu.",
+                500,
+                1100
+              );
+
+              canvas.toBlob(
+                (blob) => {
+                  URL.revokeObjectURL(qrUrl);
+
+                  if (!blob) {
+                    reject(
+                      new Error(
+                        "Imeshindikana kutengeneza ticket image."
+                      )
+                    );
+                    return;
+                  }
+
+                  resolve(blob);
+                },
+                "image/png",
+                1
+              );
+            };
+
+            qrImage.onerror = () => {
+              URL.revokeObjectURL(qrUrl);
+              reject(
+                new Error(
+                  "Imeshindikana kutengeneza QR image."
+                )
+              );
+            };
+
+            qrImage.src = qrUrl;
+          }
+        );
+
+      const fileName =
+        `${ticketNumber}.png`;
+
+      const ticketFile =
+        new File(
+          [pngBlob],
+          fileName,
+          {
+            type: "image/png",
+          }
+        );
+
+      const message =
+        `🎟️ ${FESTIVAL_NAME}\n\n` +
+        `Habari ${participantName}, tiketi yako rasmi imetolewa.\n\n` +
+        `Ticket No: ${ticketNumber}\n\n` +
+        "Hifadhi picha hii na uionyeshe wakati wa kuingia kwenye festival.";
+
+      // On supported mobile browsers, share the actual PNG file.
+      if (
+        navigator.share &&
+        navigator.canShare?.({
+          files: [ticketFile],
+        })
+      ) {
+        await navigator.share({
+          title:
+            `${FESTIVAL_NAME} - ${ticketNumber}`,
+          text: message,
+          files: [ticketFile],
+        });
+        return;
+      }
+
+      // Desktop fallback: download the ticket image, then open WhatsApp text.
+      const downloadUrl =
+        URL.createObjectURL(pngBlob);
+
+      const link =
+        document.createElement("a");
+
+      link.href = downloadUrl;
+      link.download = fileName;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      setTimeout(() => {
+        URL.revokeObjectURL(downloadUrl);
+      }, 2000);
+
+      window.open(
+        `https://wa.me/${whatsappNumber(
+          registration.namba_simu
+        )}?text=${encodeURIComponent(
+          message +
+            "\n\nTicket image imedownload. Ambatanisha picha hiyo hapa WhatsApp."
+        )}`,
+        "_blank",
+        "noopener,noreferrer"
+      );
+    } catch (error) {
+      // User cancelling the native share sheet should not show an error.
+      if (error?.name === "AbortError") {
+        return;
+      }
+
+      console.error(
+        "Ticket WhatsApp share error:",
+        error
+      );
+
+      alert(
+        "Imeshindikana kushare picha ya tiketi."
+      );
+    }
+  }
+
   async function sendTicketSms(
     ticket
   ) {
@@ -2044,251 +2337,7 @@ export default function Admin() {
       const {
         error: smsError,
       } =
-        await supabase.functions.invoasync function sendTicketWhatsApp(ticket) {
-  const registration = getRegistration(ticket.registration_id);
-
-  if (!registration?.namba_simu) {
-    alert("Namba ya simu haijapatikana.");
-    return;
-  }
-
-  try {
-    const participantName =
-      registration?.jina_kamili || "Mshiriki";
-
-    const ticketNumber =
-      ticket?.ticket_number || "—";
-
-    const qrSvg = qrSvgString(ticket.qr_token);
-
-    const qrBlob = new Blob([qrSvg], {
-      type: "image/svg+xml;charset=utf-8",
-    });
-
-    const qrUrl = URL.createObjectURL(qrBlob);
-
-    const qrImage = new Image();
-
-    const pngBlob = await new Promise((resolve, reject) => {
-      qrImage.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 1000;
-        canvas.height = 1200;
-
-        const ctx = canvas.getContext("2d");
-
-        // Background
-        ctx.fillStyle = "#f3f5f4";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Ticket card
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(60, 60, 880, 1080);
-
-        // Header
-        ctx.fillStyle = "#126333";
-        ctx.fillRect(60, 60, 880, 230);
-
-        ctx.textAlign = "center";
-
-        ctx.fillStyle = "#ffd21f";
-        ctx.font = "bold 26px Arial";
-        ctx.fillText(
-          "OFFICIAL ENTRY TICKET",
-          500,
-          115
-        );
-
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 44px Arial";
-        ctx.fillText(
-          "MWANZA CHEREHANI",
-          500,
-          180
-        );
-        ctx.fillText(
-          "FESTIVAL 2026",
-          500,
-          235
-        );
-
-        // Ticket number
-        ctx.fillStyle = "#68746e";
-        ctx.font = "bold 22px Arial";
-        ctx.fillText(
-          "TICKET NUMBER",
-          500,
-          345
-        );
-
-        ctx.fillStyle = "#111c17";
-        ctx.font = "bold 50px Arial";
-        ctx.fillText(
-          ticketNumber,
-          500,
-          405
-        );
-
-        // Participant
-        ctx.fillStyle = "#68746e";
-        ctx.font = "bold 22px Arial";
-        ctx.fillText(
-          "MSHIRIKI",
-          500,
-          470
-        );
-
-        ctx.fillStyle = "#111c17";
-        ctx.font = "bold 34px Arial";
-        ctx.fillText(
-          participantName,
-          500,
-          520
-        );
-
-        ctx.fillStyle = "#59665f";
-        ctx.font = "22px Arial";
-        ctx.fillText(
-          registration?.namba_simu || "",
-          500,
-          560
-        );
-
-        // QR background
-        ctx.fillStyle = "#eafff0";
-        ctx.fillRect(250, 610, 500, 410);
-
-        // QR code
-        ctx.drawImage(
-          qrImage,
-          325,
-          645,
-          350,
-          350
-        );
-
-        ctx.fillStyle = "#126333";
-        ctx.font = "bold 28px Arial";
-        ctx.fillText(
-          "SCAN TO CHECK IN",
-          500,
-          1065
-        );
-
-        ctx.fillStyle = "#59665f";
-        ctx.font = "20px Arial";
-        ctx.fillText(
-          "Tiketi hii inaweza kutumika mara moja tu.",
-          500,
-          1100
-        );
-
-        canvas.toBlob(
-          (blob) => {
-            URL.revokeObjectURL(qrUrl);
-
-            if (!blob) {
-              reject(
-                new Error(
-                  "Imeshindikana kutengeneza ticket image."
-                )
-              );
-              return;
-            }
-
-            resolve(blob);
-          },
-          "image/png",
-          1
-        );
-      };
-
-      qrImage.onerror = () => {
-        URL.revokeObjectURL(qrUrl);
-
-        reject(
-          new Error(
-            "Imeshindikana kutengeneza QR image."
-          )
-        );
-      };
-
-      qrImage.src = qrUrl;
-    });
-
-    const fileName = `${ticketNumber}.png`;
-
-    const ticketFile = new File(
-      [pngBlob],
-      fileName,
-      {
-        type: "image/png",
-      }
-    );
-
-    const message =
-      `🎟️ ${FESTIVAL_NAME}\n\n` +
-      `Habari ${participantName}, tiketi yako rasmi imetolewa.\n\n` +
-      `Ticket No: ${ticketNumber}\n\n` +
-      `Hifadhi picha hii na uionyeshe wakati wa kuingia kwenye festival.`;
-
-    // Mobile / supported browser:
-    // share actual ticket image
-    if (
-      navigator.share &&
-      navigator.canShare?.({
-        files: [ticketFile],
-      })
-    ) {
-      await navigator.share({
-        title: `${FESTIVAL_NAME} - ${ticketNumber}`,
-        text: message,
-        files: [ticketFile],
-      });
-
-      return;
-    }
-
-    // Desktop fallback:
-    // download PNG then open WhatsApp
-    const downloadUrl =
-      URL.createObjectURL(pngBlob);
-
-    const link =
-      document.createElement("a");
-
-    link.href = downloadUrl;
-    link.download = fileName;
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setTimeout(() => {
-      URL.revokeObjectURL(downloadUrl);
-    }, 2000);
-
-    window.open(
-      `https://wa.me/${whatsappNumber(
-        registration.namba_simu
-      )}?text=${encodeURIComponent(
-        message +
-          "\n\nTicket image imedownload. Ambatanisha picha hiyo hapa WhatsApp."
-      )}`,
-      "_blank",
-      "noopener,noreferrer"
-    );
-  } catch (error) {
-    console.error(
-      "Ticket WhatsApp share error:",
-      error
-    );
-
-    alert(
-      "Imeshindikana kushare picha ya tiketi."
-    );
-  }
-}ke(
+        await supabase.functions.invoke(
           "send-sms",
           {
             body: {
