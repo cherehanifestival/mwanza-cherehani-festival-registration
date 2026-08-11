@@ -17,15 +17,14 @@ const supabase = createClient(
 );
 
 /* =========================================================
-   ADMIN CONFIG
+   CONFIG
 ========================================================= */
 
 const ADMIN_EMAIL =
   "cherehanifestival2026@gmail.com";
 
-/* =========================================================
-   REGISTRATION STATUSES
-========================================================= */
+const FESTIVAL_NAME =
+  "Mwanza Cherehani Festival 2026";
 
 const statuses = [
   ["mpya", "Mpya"],
@@ -40,9 +39,15 @@ const statuses = [
   ["amekataliwa", "Amekataliwa"],
 ];
 
-/* =========================================================
-   EMPTY PACKAGE
-========================================================= */
+const paymentStatuses = [
+  ["pending", "Pending"],
+  ["instructions_sent", "Maelekezo Yametumwa"],
+  ["submitted", "Malipo Yamewasilishwa"],
+  ["paid", "Amelipa"],
+  ["verified", "Malipo Yamehakikiwa"],
+  ["rejected", "Malipo Yamekataliwa"],
+  ["refunded", "Imerejeshwa"],
+];
 
 const emptyPackage = {
   name: "",
@@ -57,9 +62,23 @@ const emptyPackage = {
   is_active: true,
 };
 
+const emptyPaymentForm = {
+  payment_method: "",
+  payment_reference: "",
+  amount_due: "",
+  amount_paid: "",
+  notes: "",
+};
+
 /* =========================================================
    HELPERS
 ========================================================= */
+
+function money(value) {
+  return new Intl.NumberFormat("sw-TZ").format(
+    Number(value || 0)
+  );
+}
 
 function whatsappNumber(phone = "") {
   let number = String(phone || "").replace(
@@ -68,37 +87,17 @@ function whatsappNumber(phone = "") {
   );
 
   if (number.startsWith("0")) {
-    number = "255" + number.substring(1);
+    number = "255" + number.slice(1);
   }
 
-  if (!number.startsWith("255")) {
+  if (
+    number &&
+    !number.startsWith("255")
+  ) {
     number = "255" + number;
   }
 
   return number;
-}
-
-function money(value) {
-  return new Intl.NumberFormat("sw-TZ").format(
-    Number(value || 0)
-  );
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-
-  try {
-    return new Date(value).toLocaleDateString(
-      "sw-TZ",
-      {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }
-    );
-  } catch {
-    return "—";
-  }
 }
 
 function sameDay(
@@ -119,6 +118,25 @@ function sameDay(
   );
 }
 
+function formatDate(value) {
+  if (!value) return "—";
+
+  try {
+    return new Date(value).toLocaleString(
+      "sw-TZ",
+      {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    );
+  } catch {
+    return "—";
+  }
+}
+
 function statusLabel(value) {
   return (
     statuses.find(
@@ -127,14 +145,26 @@ function statusLabel(value) {
   );
 }
 
+function paymentStatusLabel(value) {
+  return (
+    paymentStatuses.find(
+      ([status]) => status === value
+    )?.[1] || value || "Pending"
+  );
+}
+
+function normalizeQrToken(value = "") {
+  return String(value)
+    .trim()
+    .replace(/\s+/g, "");
+}
+
 /* =========================================================
    ADMIN COMPONENT
 ========================================================= */
 
 export default function Admin() {
-  /* =======================================================
-     AUTH
-  ======================================================= */
+  /* ========================= AUTH ======================== */
 
   const [session, setSession] =
     useState(null);
@@ -151,12 +181,10 @@ export default function Admin() {
   const [loginLoading, setLoginLoading] =
     useState(false);
 
-  /* =======================================================
-     MFA
-  ======================================================= */
-
   const [adminReady, setAdminReady] =
     useState(false);
+
+  /* ========================= MFA ========================= */
 
   const [mfaStage, setMfaStage] =
     useState("none");
@@ -176,9 +204,7 @@ export default function Admin() {
   const [mfaLoading, setMfaLoading] =
     useState(false);
 
-  /* =======================================================
-     DATA
-  ======================================================= */
+  /* ========================= DATA ======================== */
 
   const [registrations, setRegistrations] =
     useState([]);
@@ -189,22 +215,25 @@ export default function Admin() {
   const [packages, setPackages] =
     useState([]);
 
+  const [payments, setPayments] =
+    useState([]);
+
+  const [tickets, setTickets] =
+    useState([]);
+
+  const [ticketScans, setTicketScans] =
+    useState([]);
+
   const [dataLoading, setDataLoading] =
     useState(false);
 
   const [error, setError] =
     useState("");
 
-  /* =======================================================
-     NAVIGATION
-  ======================================================= */
+  /* ========================= UI ========================== */
 
   const [tab, setTab] =
     useState("registrations");
-
-  /* =======================================================
-     SEARCH
-  ======================================================= */
 
   const [search, setSearch] =
     useState("");
@@ -212,19 +241,33 @@ export default function Admin() {
   const [agentSearch, setAgentSearch] =
     useState("");
 
-  /* =======================================================
-     MODALS
-  ======================================================= */
+  const [paymentSearch, setPaymentSearch] =
+    useState("");
 
-  const [selectedRegistration, setSelectedRegistration] =
-    useState(null);
+  const [ticketSearch, setTicketSearch] =
+    useState("");
 
-  const [selectedAgent, setSelectedAgent] =
-    useState(null);
+  const [
+    selectedRegistration,
+    setSelectedRegistration,
+  ] = useState(null);
 
-  /* =======================================================
-     PACKAGE FORM
-  ======================================================= */
+  const [
+    selectedAgent,
+    setSelectedAgent,
+  ] = useState(null);
+
+  const [
+    selectedPaymentRegistration,
+    setSelectedPaymentRegistration,
+  ] = useState(null);
+
+  const [
+    selectedTicket,
+    setSelectedTicket,
+  ] = useState(null);
+
+  /* ====================== PACKAGE FORM =================== */
 
   const [packageForm, setPackageForm] =
     useState(emptyPackage);
@@ -239,9 +282,37 @@ export default function Admin() {
     setSavingPackage,
   ] = useState(false);
 
-  /* =======================================================
-     INITIAL SESSION
-  ======================================================= */
+  /* ====================== PAYMENT FORM =================== */
+
+  const [
+    paymentForm,
+    setPaymentForm,
+  ] = useState(emptyPaymentForm);
+
+  const [
+    paymentSaving,
+    setPaymentSaving,
+  ] = useState(false);
+
+  const [
+    paymentSending,
+    setPaymentSending,
+  ] = useState(false);
+
+  /* ======================= QR SCAN ======================= */
+
+  const [qrToken, setQrToken] =
+    useState("");
+
+  const [scanLoading, setScanLoading] =
+    useState(false);
+
+  const [scanResult, setScanResult] =
+    useState(null);
+
+  /* =========================================================
+     SESSION INITIALIZATION
+  ========================================================= */
 
   useEffect(() => {
     initializeAuth();
@@ -253,7 +324,7 @@ export default function Admin() {
         setSession(newSession);
 
         if (!newSession) {
-          clearAdminSession();
+          clearAdminState();
         }
       }
     );
@@ -261,10 +332,6 @@ export default function Admin() {
     return () =>
       subscription.unsubscribe();
   }, []);
-
-  /* =======================================================
-     LOAD ADMIN DATA ONLY AFTER AAL2
-  ======================================================= */
 
   useEffect(() => {
     if (
@@ -275,10 +342,6 @@ export default function Admin() {
       loadEverything();
     }
   }, [session, adminReady]);
-
-  /* =======================================================
-     AUTH INITIALIZER
-  ======================================================= */
 
   async function initializeAuth() {
     setLoading(true);
@@ -306,10 +369,6 @@ export default function Admin() {
         ADMIN_EMAIL
       ) {
         await supabase.auth.signOut();
-
-        setSession(null);
-        setAdminReady(false);
-
         return;
       }
 
@@ -317,10 +376,7 @@ export default function Admin() {
 
       await prepareMfa();
     } catch (authError) {
-      console.error(
-        "Admin session error:",
-        authError
-      );
+      console.error(authError);
 
       setError(
         "Imeshindikana kuhakiki session ya admin."
@@ -330,9 +386,9 @@ export default function Admin() {
     }
   }
 
-  /* =======================================================
+  /* =========================================================
      LOGIN
-  ======================================================= */
+  ========================================================= */
 
   async function login(event) {
     event.preventDefault();
@@ -344,20 +400,19 @@ export default function Admin() {
     try {
       const {
         data,
-        error: authError,
+        error: loginError,
       } =
         await supabase.auth.signInWithPassword(
           {
             email: email
               .trim()
               .toLowerCase(),
-
             password,
           }
         );
 
-      if (authError) {
-        throw authError;
+      if (loginError) {
+        throw loginError;
       }
 
       if (
@@ -377,10 +432,7 @@ export default function Admin() {
 
       await prepareMfa();
     } catch (loginError) {
-      console.error(
-        "Admin login error:",
-        loginError
-      );
+      console.error(loginError);
 
       setError(
         "Barua pepe au nenosiri si sahihi."
@@ -391,7 +443,7 @@ export default function Admin() {
   }
 
   /* =========================================================
-     MFA PREPARATION
+     MFA
   ========================================================= */
 
   async function prepareMfa() {
@@ -399,97 +451,60 @@ export default function Admin() {
     setAdminReady(false);
 
     try {
-      /*
-       * Check current AAL.
-       */
       const {
-        data: aalData,
-        error: aalError,
+        data: assurance,
+        error: assuranceError,
       } =
         await supabase.auth.mfa
           .getAuthenticatorAssuranceLevel();
 
-      if (aalError) {
-        throw aalError;
+      if (assuranceError) {
+        throw assuranceError;
       }
 
-      /*
-       * Already MFA authenticated.
-       */
       if (
-        aalData?.currentLevel ===
+        assurance?.currentLevel ===
         "aal2"
       ) {
         setAdminReady(true);
-
         setMfaStage("none");
-        setMfaCode("");
-
         return;
       }
 
-      /*
-       * Find existing MFA factors.
-       */
       const {
-        data: factorsData,
-        error: factorsError,
+        data: factorData,
+        error: factorError,
       } =
-        await supabase.auth.mfa
-          .listFactors();
+        await supabase.auth.mfa.listFactors();
 
-      if (factorsError) {
-        throw factorsError;
+      if (factorError) {
+        throw factorError;
       }
 
-      const totpFactors =
-        factorsData?.totp || [];
-
-      /*
-       * Find verified authenticator.
-       */
       const verifiedFactor =
-        totpFactors.find(
+        factorData?.totp?.find(
           (factor) =>
-            factor.status ===
-            "verified"
+            factor.status === "verified"
         );
 
-      /*
-       * Existing MFA → ask for code.
-       */
       if (verifiedFactor) {
         setMfaFactorId(
           verifiedFactor.id
         );
 
         setMfaStage("verify");
-
-        setMfaQrCode("");
-        setMfaSecret("");
-
         return;
       }
 
-      /*
-       * No verified factor → enrollment.
-       */
       await createMfaEnrollment();
     } catch (mfaError) {
-      console.error(
-        "MFA preparation error:",
-        mfaError
-      );
+      console.error(mfaError);
 
       setError(
-        "Imeshindikana kuanzisha usalama wa MFA."
+        "Imeshindikana kuanzisha MFA."
       );
     }
   }
-
-  /* =========================================================
-     MFA ENROLLMENT
-  ========================================================= */
 
   async function createMfaEnrollment() {
     setMfaLoading(true);
@@ -498,23 +513,19 @@ export default function Admin() {
     try {
       const {
         data,
-        error: enrollError,
+        error: enrollmentError,
       } =
         await supabase.auth.mfa.enroll({
           factorType: "totp",
-
           friendlyName:
-            "Cherehani Admin " +
-            Date.now(),
+            "Cherehani Festival Admin",
         });
 
-      if (enrollError) {
-        throw enrollError;
+      if (enrollmentError) {
+        throw enrollmentError;
       }
 
-      setMfaFactorId(
-        data.id
-      );
+      setMfaFactorId(data.id);
 
       setMfaQrCode(
         data.totp?.qr_code || ""
@@ -525,41 +536,28 @@ export default function Admin() {
       );
 
       setMfaStage("enroll");
-
       setMfaCode("");
-    } catch (enrollError) {
-      console.error(
-        "MFA enrollment error:",
-        enrollError
-      );
+    } catch (enrollmentError) {
+      console.error(enrollmentError);
 
       setError(
-        "Imeshindikana kutengeneza MFA QR Code."
+        "Imeshindikana kutengeneza MFA QR."
       );
     } finally {
       setMfaLoading(false);
     }
   }
 
-  /* =========================================================
-     MFA VERIFY
-  ========================================================= */
-
   async function verifyMfa(event) {
     event.preventDefault();
 
-    setError("");
+    const code = String(mfaCode)
+      .replace(/\D/g, "")
+      .slice(0, 6);
 
-    const cleanCode =
-      mfaCode
-        .replace(/\D/g, "")
-        .slice(0, 6);
-
-    if (
-      cleanCode.length !== 6
-    ) {
+    if (code.length !== 6) {
       setError(
-        "Weka namba zote 6 kutoka Authenticator app."
+        "Weka namba zote 6 kutoka Authenticator."
       );
 
       return;
@@ -567,13 +565,14 @@ export default function Admin() {
 
     if (!mfaFactorId) {
       setError(
-        "MFA factor haijapatikana. Tafadhali ingia tena."
+        "MFA factor haijapatikana."
       );
 
       return;
     }
 
     setMfaLoading(true);
+    setError("");
 
     try {
       const {
@@ -581,164 +580,93 @@ export default function Admin() {
       } =
         await supabase.auth.mfa
           .challengeAndVerify({
-            factorId:
-              mfaFactorId,
-
-            code: cleanCode,
+            factorId: mfaFactorId,
+            code,
           });
 
       if (verifyError) {
         throw verifyError;
       }
 
-      /*
-       * Confirm upgraded session.
-       */
       const {
-        data: aalData,
-        error: aalError,
+        data: assurance,
+        error: assuranceError,
       } =
         await supabase.auth.mfa
           .getAuthenticatorAssuranceLevel();
 
-      if (aalError) {
-        throw aalError;
+      if (assuranceError) {
+        throw assuranceError;
       }
 
       if (
-        aalData?.currentLevel !==
+        assurance?.currentLevel !==
         "aal2"
       ) {
         throw new Error(
-          "Session did not reach AAL2."
+          "MFA session was not upgraded."
         );
       }
 
       const {
-        data: {
-          session:
-            refreshedSession,
-        },
+        data: { session: refreshed },
       } =
         await supabase.auth.getSession();
 
-      setSession(
-        refreshedSession
-      );
-
-      setAdminReady(true);
+      setSession(refreshed);
 
       setMfaStage("none");
       setMfaCode("");
-
-      setError("");
+      setAdminReady(true);
     } catch (verifyError) {
-      console.error(
-        "MFA verification error:",
-        verifyError
-      );
+      console.error(verifyError);
 
       setError(
-        "Msimbo wa MFA si sahihi au umeisha muda. Jaribu namba mpya."
+        "Msimbo wa MFA si sahihi au umeisha muda."
       );
     } finally {
       setMfaLoading(false);
     }
   }
-
-  /* =========================================================
-     NEW MFA QR
-  ========================================================= */
-
-  async function generateNewMfaQr() {
-    setError("");
-    setMfaLoading(true);
-
-    try {
-      /*
-       * Remove current unverified enrollment
-       * where possible.
-       */
-      if (mfaFactorId) {
-        try {
-          await supabase.auth.mfa
-            .unenroll({
-              factorId:
-                mfaFactorId,
-            });
-        } catch (
-          unenrollError
-        ) {
-          console.warn(
-            "Could not remove old factor:",
-            unenrollError
-          );
-        }
-      }
-
-      setMfaFactorId("");
-      setMfaQrCode("");
-      setMfaSecret("");
-      setMfaCode("");
-
-      await createMfaEnrollment();
-    } catch (qrError) {
-      console.error(
-        "New MFA QR error:",
-        qrError
-      );
-
-      setError(
-        "Imeshindikana kutengeneza QR mpya."
-      );
-    } finally {
-      setMfaLoading(false);
-    }
-  }
-
-  /* =========================================================
-     LOGOUT
-  ========================================================= */
 
   async function logout() {
     try {
       await supabase.auth.signOut();
-    } catch (logoutError) {
-      console.error(
-        logoutError
-      );
+    } finally {
+      clearAdminState();
     }
-
-    clearAdminSession();
   }
 
-  function clearAdminSession() {
+  function clearAdminState() {
     setSession(null);
     setAdminReady(false);
-
-    setMfaStage("none");
-    setMfaCode("");
-    setMfaFactorId("");
-    setMfaQrCode("");
-    setMfaSecret("");
 
     setRegistrations([]);
     setAgents([]);
     setPackages([]);
+    setPayments([]);
+    setTickets([]);
+    setTicketScans([]);
 
-    setSelectedRegistration(
+    setMfaStage("none");
+    setMfaFactorId("");
+    setMfaCode("");
+    setMfaQrCode("");
+    setMfaSecret("");
+
+    setSelectedRegistration(null);
+    setSelectedAgent(null);
+    setSelectedPaymentRegistration(
       null
     );
-
-    setSelectedAgent(null);
+    setSelectedTicket(null);
 
     setPassword("");
-
     setTab("registrations");
   }
 
   /* =========================================================
-     LOAD ALL
+     LOAD DATA
   ========================================================= */
 
   async function loadEverything() {
@@ -750,15 +678,14 @@ export default function Admin() {
         loadRegistrations(),
         loadAgents(),
         loadPackages(),
+        loadPayments(),
+        loadTickets(),
+        loadTicketScans(),
       ]);
     } finally {
       setDataLoading(false);
     }
   }
-
-  /* =========================================================
-     REGISTRATIONS
-  ========================================================= */
 
   async function loadRegistrations() {
     const {
@@ -770,16 +697,11 @@ export default function Admin() {
         .select("*")
         .order(
           "created_at",
-          {
-            ascending: false,
-          }
+          { ascending: false }
         );
 
     if (fetchError) {
-      console.error(
-        "Registrations error:",
-        fetchError
-      );
+      console.error(fetchError);
 
       setError(
         "Imeshindikana kupakia washiriki."
@@ -788,35 +710,24 @@ export default function Admin() {
       return;
     }
 
-    setRegistrations(
-      data || []
-    );
+    setRegistrations(data || []);
   }
-
-  /* =========================================================
-     AGENTS
-  ========================================================= */
 
   async function loadAgents() {
     const {
       data,
-      error: agentsError,
+      error: fetchError,
     } =
       await supabase
         .from("agents")
         .select("*")
         .order(
           "created_at",
-          {
-            ascending: false,
-          }
+          { ascending: false }
         );
 
-    if (agentsError) {
-      console.error(
-        "Agents error:",
-        agentsError
-      );
+    if (fetchError) {
+      console.error(fetchError);
 
       setError(
         "Imeshindikana kupakia agents."
@@ -825,35 +736,24 @@ export default function Admin() {
       return;
     }
 
-    setAgents(
-      data || []
-    );
+    setAgents(data || []);
   }
-
-  /* =========================================================
-     PACKAGES
-  ========================================================= */
 
   async function loadPackages() {
     const {
       data,
-      error: packageError,
+      error: fetchError,
     } =
       await supabase
         .from("packages")
         .select("*")
         .order(
           "display_order",
-          {
-            ascending: true,
-          }
+          { ascending: true }
         );
 
-    if (packageError) {
-      console.error(
-        "Packages error:",
-        packageError
-      );
+    if (fetchError) {
+      console.error(fetchError);
 
       setError(
         "Imeshindikana kupakia vifurushi."
@@ -862,59 +762,155 @@ export default function Admin() {
       return;
     }
 
-    setPackages(
-      data || []
-    );
+    setPackages(data || []);
+  }
+
+  async function loadPayments() {
+    const {
+      data,
+      error: fetchError,
+    } =
+      await supabase
+        .from("payments")
+        .select("*")
+        .order(
+          "created_at",
+          { ascending: false }
+        );
+
+    if (fetchError) {
+      console.error(fetchError);
+
+      setError(
+        "Imeshindikana kupakia malipo."
+      );
+
+      return;
+    }
+
+    setPayments(data || []);
+  }
+
+  async function loadTickets() {
+    const {
+      data,
+      error: fetchError,
+    } =
+      await supabase
+        .from("tickets")
+        .select("*")
+        .order(
+          "created_at",
+          { ascending: false }
+        );
+
+    if (fetchError) {
+      console.error(fetchError);
+
+      setError(
+        "Imeshindikana kupakia tiketi."
+      );
+
+      return;
+    }
+
+    setTickets(data || []);
+  }
+
+  async function loadTicketScans() {
+    const {
+      data,
+      error: fetchError,
+    } =
+      await supabase
+        .from("ticket_scans")
+        .select("*")
+        .order(
+          "created_at",
+          { ascending: false }
+        )
+        .limit(100);
+
+    if (fetchError) {
+      console.error(fetchError);
+
+      return;
+    }
+
+    setTicketScans(data || []);
   }
 
   /* =========================================================
-     AGENT HELPERS
+     RELATIONSHIP HELPERS
   ========================================================= */
 
-  function getAgent(agentId) {
-    if (!agentId) {
-      return null;
-    }
-
+  function getRegistration(id) {
     return (
-      agents.find(
-        (agent) =>
-          agent.id === agentId
+      registrations.find(
+        (registration) =>
+          registration.id === id
       ) || null
     );
   }
 
-  function getAgentName(
-    agentId
-  ) {
-    if (!agentId) {
-      return "Public";
-    }
+  function getAgent(id) {
+    return (
+      agents.find(
+        (agent) =>
+          agent.id === id
+      ) || null
+    );
+  }
+
+  function getAgentName(id) {
+    if (!id) return "Public";
 
     return (
-      getAgent(agentId)
-        ?.full_name ||
+      getAgent(id)?.full_name ||
       "Agent"
     );
   }
 
   function getAgentRegistrations(
-    agentId
+    id
   ) {
     return registrations.filter(
       (registration) =>
-        registration.agent_id ===
-        agentId
+        registration.agent_id === id
+    );
+  }
+
+  function getPaymentByRegistration(
+    registrationId
+  ) {
+    return (
+      payments.find(
+        (payment) =>
+          payment.registration_id ===
+          registrationId
+      ) || null
+    );
+  }
+
+  function getTicketByRegistration(
+    registrationId
+  ) {
+    return (
+      tickets.find(
+        (ticket) =>
+          ticket.registration_id ===
+          registrationId
+      ) || null
     );
   }
 
   /* =========================================================
-     UPDATE REGISTRATION STATUS
+     REGISTRATION STATUS
   ========================================================= */
 
   async function updateStatus(
-    registrationId,
-    newStatus
+    id,
+    status
   ) {
     const {
       error: updateError,
@@ -922,19 +918,12 @@ export default function Admin() {
       await supabase
         .from("registrations")
         .update({
-          hali_ya_usajili:
-            newStatus,
+          hali_ya_usajili: status,
         })
-        .eq(
-          "id",
-          registrationId
-        );
+        .eq("id", id);
 
     if (updateError) {
-      console.error(
-        "Registration status error:",
-        updateError
-      );
+      console.error(updateError);
 
       alert(
         "Imeshindikana kubadilisha hali ya usajili."
@@ -947,46 +936,23 @@ export default function Admin() {
       (current) =>
         current.map(
           (registration) =>
-            registration.id ===
-            registrationId
+            registration.id === id
               ? {
                   ...registration,
-
                   hali_ya_usajili:
-                    newStatus,
+                    status,
                 }
               : registration
         )
     );
-
-    setSelectedRegistration(
-      (current) => {
-        if (
-          !current ||
-          current.id !==
-            registrationId
-        ) {
-          return current;
-        }
-
-        return {
-          ...current,
-
-          hali_ya_usajili:
-            newStatus,
-        };
-      }
-    );
   }
 
   /* =========================================================
-     TOGGLE AGENT
+     AGENT MANAGEMENT
   ========================================================= */
 
-  async function toggleAgent(
-    agent
-  ) {
-    const newValue =
+  async function toggleAgent(agent) {
+    const active =
       !agent.is_active;
 
     const {
@@ -995,22 +961,15 @@ export default function Admin() {
       await supabase
         .from("agents")
         .update({
-          is_active:
-            newValue,
+          is_active: active,
         })
-        .eq(
-          "id",
-          agent.id
-        );
+        .eq("id", agent.id);
 
     if (updateError) {
-      console.error(
-        "Agent update error:",
-        updateError
-      );
+      console.error(updateError);
 
       alert(
-        "Imeshindikana kubadilisha hali ya agent."
+        "Imeshindikana kubadilisha agent."
       );
 
       return;
@@ -1023,68 +982,45 @@ export default function Admin() {
             item.id === agent.id
               ? {
                   ...item,
-
-                  is_active:
-                    newValue,
+                  is_active: active,
                 }
               : item
         )
     );
 
     if (
-      selectedAgent?.id ===
-      agent.id
+      selectedAgent?.id === agent.id
     ) {
-      setSelectedAgent(
-        (current) => ({
-          ...current,
-
-          is_active:
-            newValue,
-        })
-      );
+      setSelectedAgent({
+        ...selectedAgent,
+        is_active: active,
+      });
     }
   }
 
   /* =========================================================
-     PACKAGE EDIT
+     PACKAGE MANAGEMENT
   ========================================================= */
 
   function editPackage(pkg) {
-    setEditingPackageId(
-      pkg.id
-    );
+    setEditingPackageId(pkg.id);
 
     setPackageForm({
-      name:
-        pkg.name || "",
-
-      category:
-        pkg.category || "",
-
+      name: pkg.name || "",
+      category: pkg.category || "",
       tent_size:
         pkg.tent_size || "",
-
-      price:
-        pkg.price ?? "",
-
+      price: pkg.price ?? "",
       vat_note:
         pkg.vat_note || "",
-
       description:
         pkg.description || "",
-
       included_items:
-        pkg.included_items ||
-        "",
-
+        pkg.included_items || "",
       participant_limit:
-        pkg.participant_limit ??
-        "",
-
+        pkg.participant_limit ?? "",
       display_order:
         pkg.display_order || 0,
-
       is_active:
         Boolean(pkg.is_active),
     });
@@ -1096,18 +1032,11 @@ export default function Admin() {
   }
 
   function cancelPackageEdit() {
-    setEditingPackageId(
-      null
-    );
-
-    setPackageForm(
-      emptyPackage
-    );
+    setEditingPackageId(null);
+    setPackageForm(emptyPackage);
   }
 
-  async function savePackage(
-    event
-  ) {
+  async function savePackage(event) {
     event.preventDefault();
 
     if (
@@ -1115,21 +1044,6 @@ export default function Admin() {
     ) {
       alert(
         "Weka jina la kifurushi."
-      );
-
-      return;
-    }
-
-    if (
-      packageForm.price ===
-        "" ||
-      packageForm.price ===
-        null ||
-      packageForm.price ===
-        undefined
-    ) {
-      alert(
-        "Weka bei ya kifurushi."
       );
 
       return;
@@ -1163,14 +1077,12 @@ export default function Admin() {
           .trim() || null,
 
       included_items:
-        packageForm
-          .included_items
+        packageForm.included_items
           .trim() || null,
 
       participant_limit:
         packageForm
-          .participant_limit ===
-        ""
+          .participant_limit === ""
           ? null
           : Number(
               packageForm
@@ -1179,8 +1091,7 @@ export default function Admin() {
 
       display_order:
         Number(
-          packageForm
-            .display_order
+          packageForm.display_order
         ) || 0,
 
       is_active:
@@ -1193,9 +1104,7 @@ export default function Admin() {
     try {
       let response;
 
-      if (
-        editingPackageId
-      ) {
+      if (editingPackageId) {
         response =
           await supabase
             .from("packages")
@@ -1208,9 +1117,7 @@ export default function Admin() {
         response =
           await supabase
             .from("packages")
-            .insert([
-              payload,
-            ]);
+            .insert([payload]);
       }
 
       if (response.error) {
@@ -1218,13 +1125,9 @@ export default function Admin() {
       }
 
       cancelPackageEdit();
-
       await loadPackages();
     } catch (packageError) {
-      console.error(
-        "Package save error:",
-        packageError
-      );
+      console.error(packageError);
 
       alert(
         "Imeshindikana kuhifadhi kifurushi."
@@ -1234,9 +1137,7 @@ export default function Admin() {
     }
   }
 
-  async function togglePackage(
-    pkg
-  ) {
+  async function togglePackage(pkg) {
     const {
       error: updateError,
     } =
@@ -1249,15 +1150,10 @@ export default function Admin() {
           updated_at:
             new Date().toISOString(),
         })
-        .eq(
-          "id",
-          pkg.id
-        );
+        .eq("id", pkg.id);
 
     if (updateError) {
-      console.error(
-        updateError
-      );
+      console.error(updateError);
 
       alert(
         "Imeshindikana kubadilisha kifurushi."
@@ -1270,15 +1166,603 @@ export default function Admin() {
   }
 
   /* =========================================================
-     FILTER REGISTRATIONS
+     PAYMENT MANAGEMENT
+  ========================================================= */
+
+  function openPaymentEditor(
+    registration
+  ) {
+    const existing =
+      getPaymentByRegistration(
+        registration.id
+      );
+
+    setSelectedPaymentRegistration(
+      registration
+    );
+
+    setPaymentForm({
+      payment_method:
+        existing?.payment_method ||
+        "",
+
+      payment_reference:
+        existing?.payment_reference ||
+        "",
+
+      amount_due:
+        existing?.amount_due ??
+        registration.package_price ??
+        "",
+
+      amount_paid:
+        existing?.amount_paid ??
+        "",
+
+      notes:
+        existing?.notes || "",
+    });
+  }
+
+  function closePaymentEditor() {
+    setSelectedPaymentRegistration(
+      null
+    );
+
+    setPaymentForm(
+      emptyPaymentForm
+    );
+  }
+
+  async function savePayment(
+    event
+  ) {
+    event.preventDefault();
+
+    if (
+      !selectedPaymentRegistration
+    ) {
+      return;
+    }
+
+    setPaymentSaving(true);
+
+    try {
+      const existing =
+        getPaymentByRegistration(
+          selectedPaymentRegistration.id
+        );
+
+      const payload = {
+        registration_id:
+          selectedPaymentRegistration.id,
+
+        amount_due:
+          Number(
+            paymentForm.amount_due ||
+              selectedPaymentRegistration.package_price ||
+              0
+          ),
+
+        amount_paid:
+          Number(
+            paymentForm.amount_paid ||
+              0
+          ),
+
+        payment_method:
+          paymentForm.payment_method
+            .trim() || null,
+
+        payment_reference:
+          paymentForm
+            .payment_reference
+            .trim() || null,
+
+        notes:
+          paymentForm.notes
+            .trim() || null,
+      };
+
+      let response;
+
+      if (existing) {
+        response =
+          await supabase
+            .from("payments")
+            .update(payload)
+            .eq(
+              "id",
+              existing.id
+            );
+      } else {
+        response =
+          await supabase
+            .from("payments")
+            .insert([
+              {
+                ...payload,
+                payment_status:
+                  "pending",
+              },
+            ]);
+      }
+
+      if (response.error) {
+        throw response.error;
+      }
+
+      await loadPayments();
+
+      closePaymentEditor();
+    } catch (paymentError) {
+      console.error(paymentError);
+
+      alert(
+        "Imeshindikana kuhifadhi malipo."
+      );
+    } finally {
+      setPaymentSaving(false);
+    }
+  }
+
+  async function setPaymentStatus(
+    payment,
+    status
+  ) {
+    const patch = {
+      payment_status: status,
+    };
+
+    if (status === "paid") {
+      patch.paid_at =
+        new Date().toISOString();
+    }
+
+    if (status === "verified") {
+      patch.verified_at =
+        new Date().toISOString();
+
+      patch.verified_by =
+        session.user.id;
+
+      if (
+        Number(
+          payment.amount_paid || 0
+        ) <= 0
+      ) {
+        patch.amount_paid =
+          Number(
+            payment.amount_due || 0
+          );
+      }
+    }
+
+    const {
+      error: updateError,
+    } =
+      await supabase
+        .from("payments")
+        .update(patch)
+        .eq("id", payment.id);
+
+    if (updateError) {
+      console.error(updateError);
+
+      alert(
+        "Imeshindikana kubadilisha hali ya malipo."
+      );
+
+      return;
+    }
+
+    if (status === "verified") {
+      await updateStatus(
+        payment.registration_id,
+        "amelipa"
+      );
+    }
+
+    await loadPayments();
+  }
+
+  function buildPaymentMessage(
+    registration,
+    payment
+  ) {
+    const amount =
+      payment?.amount_due ??
+      registration.package_price ??
+      0;
+
+    const method =
+      payment?.payment_method
+        ? `Njia ya malipo: ${payment.payment_method}.`
+        : "";
+
+    const reference =
+      payment?.payment_reference
+        ? `Rejea: ${payment.payment_reference}.`
+        : "";
+
+    const notes =
+      payment?.notes || "";
+
+    return `Habari ${
+      registration.jina_kamili
+    }, maelekezo ya malipo ya ${FESTIVAL_NAME}. Kifurushi: ${
+      registration.package_name ||
+      "Ushiriki"
+    }. Kiasi: TSh ${money(
+      amount
+    )}. ${method} ${reference} ${notes}`.trim();
+  }
+
+  async function sendPaymentSms(
+    registration,
+    payment
+  ) {
+    if (!registration?.namba_simu) {
+      alert(
+        "Mshiriki hana namba ya simu."
+      );
+
+      return;
+    }
+
+    setPaymentSending(true);
+
+    try {
+      const {
+        error: smsError,
+      } =
+        await supabase.functions.invoke(
+          "send-sms",
+          {
+            body: {
+              to:
+                registration.namba_simu,
+
+              message:
+                buildPaymentMessage(
+                  registration,
+                  payment
+                ),
+            },
+          }
+        );
+
+      if (smsError) {
+        throw smsError;
+      }
+
+      if (payment) {
+        await setPaymentStatus(
+          payment,
+          "instructions_sent"
+        );
+      }
+
+      alert(
+        "Maelekezo ya malipo yametumwa."
+      );
+    } catch (smsError) {
+      console.error(smsError);
+
+      alert(
+        "SMS haijatumwa. Angalia Sender ID/API."
+      );
+    } finally {
+      setPaymentSending(false);
+    }
+  }
+
+  function openPaymentWhatsApp(
+    registration,
+    payment
+  ) {
+    const message =
+      buildPaymentMessage(
+        registration,
+        payment
+      );
+
+    const url =
+      `https://wa.me/${whatsappNumber(
+        registration.namba_simu
+      )}?text=${encodeURIComponent(
+        message
+      )}`;
+
+    window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  /* =========================================================
+     TICKETING
+  ========================================================= */
+
+  async function issueTicket(
+    registration
+  ) {
+    const payment =
+      getPaymentByRegistration(
+        registration.id
+      );
+
+    if (!payment) {
+      alert(
+        "Tengeneza rekodi ya malipo kwanza."
+      );
+
+      return;
+    }
+
+    if (
+      payment.payment_status !==
+      "verified"
+    ) {
+      alert(
+        "Malipo lazima yahakikiwe kabla ya kutoa tiketi."
+      );
+
+      return;
+    }
+
+    try {
+      const {
+        data,
+        error: ticketError,
+      } =
+        await supabase.rpc(
+          "issue_ticket",
+          {
+            p_registration_id:
+              registration.id,
+          }
+        );
+
+      if (ticketError) {
+        throw ticketError;
+      }
+
+      await loadTickets();
+
+      if (data) {
+        setSelectedTicket(data);
+      }
+
+      await updateStatus(
+        registration.id,
+        "amethibitishwa"
+      );
+    } catch (ticketError) {
+      console.error(ticketError);
+
+      alert(
+        ticketError.message ||
+          "Imeshindikana kutoa tiketi."
+      );
+    }
+  }
+
+  async function copyTicketToken(
+    ticket
+  ) {
+    try {
+      await navigator.clipboard.writeText(
+        ticket.qr_token
+      );
+
+      alert(
+        "QR token imenakiliwa."
+      );
+    } catch {
+      alert(
+        ticket.qr_token
+      );
+    }
+  }
+
+  function buildTicketMessage(
+    registration,
+    ticket
+  ) {
+    return `Habari ${
+      registration?.jina_kamili ||
+      "Mshiriki"
+    }, tiketi yako ya ${FESTIVAL_NAME} imetolewa. Ticket No: ${
+      ticket.ticket_number
+    }. QR Token: ${
+      ticket.qr_token
+    }. Hifadhi taarifa hizi kwa ajili ya kuingia kwenye festival.`;
+  }
+
+  function sendTicketWhatsApp(
+    ticket
+  ) {
+    const registration =
+      getRegistration(
+        ticket.registration_id
+      );
+
+    if (
+      !registration?.namba_simu
+    ) {
+      alert(
+        "Namba ya simu haijapatikana."
+      );
+
+      return;
+    }
+
+    window.open(
+      `https://wa.me/${whatsappNumber(
+        registration.namba_simu
+      )}?text=${encodeURIComponent(
+        buildTicketMessage(
+          registration,
+          ticket
+        )
+      )}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  async function sendTicketSms(
+    ticket
+  ) {
+    const registration =
+      getRegistration(
+        ticket.registration_id
+      );
+
+    if (
+      !registration?.namba_simu
+    ) {
+      return;
+    }
+
+    try {
+      const {
+        error: smsError,
+      } =
+        await supabase.functions.invoke(
+          "send-sms",
+          {
+            body: {
+              to:
+                registration.namba_simu,
+
+              message:
+                buildTicketMessage(
+                  registration,
+                  ticket
+                ),
+            },
+          }
+        );
+
+      if (smsError) {
+        throw smsError;
+      }
+
+      alert(
+        "Taarifa za tiketi zimetumwa."
+      );
+    } catch (smsError) {
+      console.error(smsError);
+
+      alert(
+        "SMS ya tiketi haijatumwa."
+      );
+    }
+  }
+
+  async function updateTicketStatus(
+    ticket,
+    status
+  ) {
+    const {
+      error: updateError,
+    } =
+      await supabase
+        .from("tickets")
+        .update({
+          ticket_status: status,
+        })
+        .eq("id", ticket.id);
+
+    if (updateError) {
+      alert(
+        "Imeshindikana kubadilisha tiketi."
+      );
+
+      return;
+    }
+
+    await loadTickets();
+  }
+
+  /* =========================================================
+     QR CHECK-IN
+  ========================================================= */
+
+  async function checkInTicket(
+    event
+  ) {
+    event.preventDefault();
+
+    const token =
+      normalizeQrToken(qrToken);
+
+    if (!token) {
+      setScanResult({
+        success: false,
+        result: "invalid",
+        message:
+          "Weka QR token kwanza.",
+      });
+
+      return;
+    }
+
+    setScanLoading(true);
+    setScanResult(null);
+
+    try {
+      const {
+        data,
+        error: scanError,
+      } =
+        await supabase.rpc(
+          "check_in_ticket",
+          {
+            p_qr_token: token,
+          }
+        );
+
+      if (scanError) {
+        throw scanError;
+      }
+
+      setScanResult(data);
+
+      await Promise.all([
+        loadTickets(),
+        loadTicketScans(),
+      ]);
+
+      if (data?.success) {
+        setQrToken("");
+      }
+    } catch (scanError) {
+      console.error(scanError);
+
+      setScanResult({
+        success: false,
+        result: "error",
+        message:
+          scanError.message ||
+          "Check-in imeshindikana.",
+      });
+    } finally {
+      setScanLoading(false);
+    }
+  }
+
+  /* =========================================================
+     FILTERS
   ========================================================= */
 
   const filteredRegistrations =
     useMemo(() => {
       const query =
-        search
-          .trim()
-          .toLowerCase();
+        search.trim().toLowerCase();
 
       if (!query) {
         return registrations;
@@ -1286,20 +1770,15 @@ export default function Admin() {
 
       return registrations.filter(
         (registration) => {
-          const agentName =
-            getAgentName(
-              registration.agent_id
-            );
-
           const fields = [
             registration.jina_kamili,
             registration.jina_biashara,
             registration.namba_simu,
             registration.barua_pepe,
-            registration.mkoa,
             registration.package_name,
-            registration.hali_ya_usajili,
-            agentName,
+            getAgentName(
+              registration.agent_id
+            ),
           ];
 
           return fields.some(
@@ -1316,10 +1795,6 @@ export default function Admin() {
       search,
     ]);
 
-  /* =========================================================
-     FILTER AGENTS
-  ========================================================= */
-
   const filteredAgents =
     useMemo(() => {
       const query =
@@ -1327,9 +1802,7 @@ export default function Admin() {
           .trim()
           .toLowerCase();
 
-      if (!query) {
-        return agents;
-      }
+      if (!query) return agents;
 
       return agents.filter(
         (agent) =>
@@ -1343,141 +1816,199 @@ export default function Admin() {
               .includes(query)
           )
       );
+    }, [agents, agentSearch]);
+
+  const filteredPayments =
+    useMemo(() => {
+      const query =
+        paymentSearch
+          .trim()
+          .toLowerCase();
+
+      return registrations.filter(
+        (registration) => {
+          const payment =
+            getPaymentByRegistration(
+              registration.id
+            );
+
+          if (!query) {
+            return true;
+          }
+
+          return [
+            registration.jina_kamili,
+            registration.namba_simu,
+            registration.package_name,
+            payment?.payment_method,
+            payment?.payment_reference,
+            payment?.payment_status,
+          ].some((field) =>
+            String(field || "")
+              .toLowerCase()
+              .includes(query)
+          );
+        }
+      );
     }, [
-      agents,
-      agentSearch,
+      registrations,
+      payments,
+      paymentSearch,
+    ]);
+
+  const filteredTickets =
+    useMemo(() => {
+      const query =
+        ticketSearch
+          .trim()
+          .toLowerCase();
+
+      if (!query) return tickets;
+
+      return tickets.filter(
+        (ticket) => {
+          const registration =
+            getRegistration(
+              ticket.registration_id
+            );
+
+          return [
+            ticket.ticket_number,
+            ticket.qr_token,
+            ticket.ticket_status,
+            registration?.jina_kamili,
+            registration?.namba_simu,
+          ].some((field) =>
+            String(field || "")
+              .toLowerCase()
+              .includes(query)
+          );
+        }
+      );
+    }, [
+      tickets,
+      registrations,
+      ticketSearch,
     ]);
 
   /* =========================================================
-     STATS
+     REPORTING
   ========================================================= */
 
   const newCount =
     registrations.filter(
-      (registration) =>
-        registration.hali_ya_usajili ===
+      (item) =>
+        item.hali_ya_usajili ===
         "mpya"
     ).length;
 
   const paidCount =
     registrations.filter(
-      (registration) =>
-        registration.hali_ya_usajili ===
-        "amelipa"
+      (item) =>
+        item.hali_ya_usajili ===
+          "amelipa" ||
+        item.hali_ya_usajili ===
+          "amethibitishwa"
     ).length;
 
   const confirmedCount =
     registrations.filter(
-      (registration) =>
-        registration.hali_ya_usajili ===
+      (item) =>
+        item.hali_ya_usajili ===
         "amethibitishwa"
     ).length;
 
   const todayCount =
     registrations.filter(
-      (registration) =>
-        sameDay(
-          registration.created_at
-        )
+      (item) =>
+        sameDay(item.created_at)
     ).length;
 
-  const agentRegistrationCount =
-    registrations.filter(
-      (registration) =>
-        Boolean(
-          registration.agent_id
-        )
-    ).length;
-
-  const publicRegistrationCount =
-    registrations.filter(
-      (registration) =>
-        !registration.agent_id
-    ).length;
-
-  const activeAgentCount =
+  const activeAgents =
     agents.filter(
       (agent) =>
         agent.is_active
     ).length;
 
-  const totalRegistrationValue =
-    registrations.reduce(
-      (
-        total,
-        registration
-      ) =>
-        total +
+  const verifiedPayments =
+    payments.filter(
+      (payment) =>
+        payment.payment_status ===
+        "verified"
+    );
+
+  const verifiedRevenue =
+    verifiedPayments.reduce(
+      (sum, payment) =>
+        sum +
         Number(
-          registration.package_price ||
+          payment.amount_paid ||
+            payment.amount_due ||
             0
         ),
       0
     );
 
-  const paidRegistrationValue =
-    registrations
-      .filter(
-        (registration) =>
-          registration.hali_ya_usajili ===
-            "amelipa" ||
-          registration.hali_ya_usajili ===
-            "amethibitishwa"
-      )
-      .reduce(
-        (
-          total,
-          registration
-        ) =>
-          total +
-          Number(
-            registration.package_price ||
-              0
-          ),
-        0
-      );
+  const expectedRevenue =
+    payments.reduce(
+      (sum, payment) =>
+        sum +
+        Number(
+          payment.amount_due || 0
+        ),
+      0
+    );
 
-  /* =========================================================
-     AGENT PERFORMANCE
-  ========================================================= */
+  const activeTickets =
+    tickets.filter(
+      (ticket) =>
+        ticket.ticket_status ===
+        "active"
+    ).length;
+
+  const usedTickets =
+    tickets.filter(
+      (ticket) =>
+        ticket.ticket_status ===
+        "used"
+    ).length;
 
   const agentPerformance =
     useMemo(() => {
       return agents
         .map((agent) => {
           const list =
-            registrations.filter(
-              (registration) =>
-                registration.agent_id ===
-                agent.id
+            getAgentRegistrations(
+              agent.id
             );
-
-          const today =
-            list.filter(
-              (registration) =>
-                sameDay(
-                  registration.created_at
-                )
-            ).length;
-
-          const paid =
-            list.filter(
-              (registration) =>
-                registration.hali_ya_usajili ===
-                  "amelipa" ||
-                registration.hali_ya_usajili ===
-                  "amethibitishwa"
-            ).length;
 
           return {
             ...agent,
 
-            total:
-              list.length,
+            total: list.length,
 
-            today,
+            today:
+              list.filter(
+                (registration) =>
+                  sameDay(
+                    registration.created_at
+                  )
+              ).length,
 
-            paid,
+            paid:
+              list.filter(
+                (registration) => {
+                  const payment =
+                    getPaymentByRegistration(
+                      registration.id
+                    );
+
+                  return (
+                    payment?.payment_status ===
+                    "verified"
+                  );
+                }
+              ).length,
           };
         })
         .sort(
@@ -1487,66 +2018,20 @@ export default function Admin() {
     }, [
       agents,
       registrations,
+      payments,
     ]);
 
   /* =========================================================
-     PACKAGE REPORT
-  ========================================================= */
-
-  const packageReport =
-    useMemo(() => {
-      const report = {};
-
-      registrations.forEach(
-        (registration) => {
-          const name =
-            registration.package_name ||
-            "Haijatajwa";
-
-          if (!report[name]) {
-            report[name] = {
-              name,
-              count: 0,
-              amount: 0,
-            };
-          }
-
-          report[name].count +=
-            1;
-
-          report[name].amount +=
-            Number(
-              registration.package_price ||
-                0
-            );
-        }
-      );
-
-      return Object.values(
-        report
-      ).sort(
-        (a, b) =>
-          b.count - a.count
-      );
-    }, [registrations]);
-
-  /* =========================================================
-     LOADING
+     LOADING SCREEN
   ========================================================= */
 
   if (loading) {
     return (
       <>
-        <style>
-          {adminStyles}
-        </style>
+        <style>{styles}</style>
 
-        <div className="admin-loading">
-          <div className="loader-dot" />
-
-          <p>
-            Inapakia mfumo...
-          </p>
+        <div className="loading-page">
+          Inapakia mfumo...
         </div>
       </>
     );
@@ -1559,39 +2044,29 @@ export default function Admin() {
   if (!session) {
     return (
       <>
-        <style>
-          {adminStyles}
-        </style>
+        <style>{styles}</style>
 
         <main className="auth-page">
           <section className="auth-card">
-            <div className="security-badge">
+            <div className="badge admin">
               ADMIN
             </div>
 
             <h1>
-              Mwanza Cherehani
-              Festival 2026
+              {FESTIVAL_NAME}
             </h1>
 
             <h2>
               Mfumo wa Usimamizi
             </h2>
 
-            <p className="auth-description">
-              Ingia kwa akaunti ya
-              administrator.
-            </p>
-
             {error && (
-              <div className="error-box">
+              <div className="error">
                 {error}
               </div>
             )}
 
-            <form
-              onSubmit={login}
-            >
+            <form onSubmit={login}>
               <label>
                 Barua Pepe
 
@@ -1603,7 +2078,6 @@ export default function Admin() {
                       event.target.value
                     )
                   }
-                  autoComplete="username"
                   required
                 />
               </label>
@@ -1619,14 +2093,12 @@ export default function Admin() {
                       event.target.value
                     )
                   }
-                  autoComplete="current-password"
                   required
                 />
               </label>
 
               <button
-                className="primary-auth-button"
-                type="submit"
+                className="primary wide"
                 disabled={
                   loginLoading
                 }
@@ -1656,13 +2128,11 @@ export default function Admin() {
   if (!adminReady) {
     return (
       <>
-        <style>
-          {adminStyles}
-        </style>
+        <style>{styles}</style>
 
         <main className="auth-page">
-          <section className="auth-card mfa-card">
-            <div className="security-badge">
+          <section className="auth-card">
+            <div className="badge secure">
               MFA SECURITY
             </div>
 
@@ -1671,68 +2141,53 @@ export default function Admin() {
             </h1>
 
             {mfaStage ===
-            "enroll" ? (
+              "enroll" && (
               <>
-                <h2>
-                  Weka Authenticator
-                </h2>
-
-                <p className="auth-description">
-                  Scan QR code kwa
+                <p>
+                  Scan QR hii kwa
                   Google Authenticator,
-                  Microsoft Authenticator,
-                  1Password au
-                  authenticator nyingine
-                  inayotumia TOTP.
+                  Microsoft
+                  Authenticator au
+                  authenticator app.
                 </p>
 
                 {mfaQrCode && (
-                  <div className="qr-container">
+                  <div className="mfa-qr">
                     <img
                       src={
                         mfaQrCode
                       }
-                      alt="MFA QR Code"
+                      alt="MFA QR"
                     />
                   </div>
                 )}
 
                 {mfaSecret && (
-                  <div className="secret-box">
-                    <span>
-                      Manual setup key
-                    </span>
+                  <div className="secret">
+                    <small>
+                      Manual key
+                    </small>
 
                     <code>
-                      {mfaSecret}
+                      {
+                        mfaSecret
+                      }
                     </code>
                   </div>
                 )}
-
-                <p className="security-note">
-                  Baada ya ku-scan,
-                  Authenticator app
-                  itakupa namba 6.
-                  Ingiza namba hiyo
-                  hapa chini.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2>
-                  MFA Verification
-                </h2>
-
-                <p className="auth-description">
-                  Fungua Authenticator
-                  app yako na uweke
-                  namba 6 ya admin.
-                </p>
               </>
             )}
 
+            {mfaStage ===
+              "verify" && (
+              <p>
+                Weka namba 6 kutoka
+                Authenticator app.
+              </p>
+            )}
+
             {error && (
-              <div className="error-box">
+              <div className="error">
                 {error}
               </div>
             )}
@@ -1746,11 +2201,7 @@ export default function Admin() {
                 MFA Code
 
                 <input
-                  className="mfa-code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
+                  className="mfa-input"
                   value={mfaCode}
                   onChange={(event) =>
                     setMfaCode(
@@ -1765,17 +2216,19 @@ export default function Admin() {
                         )
                     )
                   }
+                  inputMode="numeric"
+                  maxLength={6}
                   placeholder="123456"
                   required
                 />
               </label>
 
               <button
-                className="primary-auth-button"
-                type="submit"
+                className="primary wide"
                 disabled={
                   mfaLoading ||
-                  mfaCode.length !== 6
+                  mfaCode.length !==
+                    6
                 }
               >
                 {mfaLoading
@@ -1784,29 +2237,9 @@ export default function Admin() {
               </button>
             </form>
 
-            {mfaStage ===
-              "enroll" && (
-              <button
-                type="button"
-                className="secondary-auth-button"
-                onClick={
-                  generateNewMfaQr
-                }
-                disabled={
-                  mfaLoading
-                }
-              >
-                Tengeneza QR Mpya
-              </button>
-            )}
-
             <button
-              type="button"
-              className="logout-auth-button"
+              className="secondary wide"
               onClick={logout}
-              disabled={
-                mfaLoading
-              }
             >
               Toka
             </button>
@@ -1817,25 +2250,18 @@ export default function Admin() {
   }
 
   /* =========================================================
-     ADMIN DASHBOARD
+     DASHBOARD
   ========================================================= */
 
   return (
     <>
-      <style>
-        {adminStyles}
-      </style>
+      <style>{styles}</style>
 
       <main className="dashboard">
-        {/* ===================================================
-            HEADER
-        =================================================== */}
-
-        <header className="admin-header">
+        <header className="header">
           <div>
             <small>
-              MWANZA CHEREHANI
-              FESTIVAL 2026
+              {FESTIVAL_NAME.toUpperCase()}
             </small>
 
             <h1>
@@ -1843,9 +2269,9 @@ export default function Admin() {
               Usimamizi
             </h1>
 
-            <div className="secure-session">
+            <span className="mfa-secured">
               ● MFA Secured
-            </div>
+            </span>
           </div>
 
           <div className="header-actions">
@@ -1858,12 +2284,8 @@ export default function Admin() {
             </a>
 
             <button
-              type="button"
               onClick={
                 loadEverything
-              }
-              disabled={
-                dataLoading
               }
             >
               {dataLoading
@@ -1872,7 +2294,6 @@ export default function Admin() {
             </button>
 
             <button
-              type="button"
               onClick={logout}
             >
               Toka
@@ -1886,98 +2307,74 @@ export default function Admin() {
           </div>
         )}
 
-        {/* ===================================================
-            NAVIGATION
-        =================================================== */}
-
-        <nav className="admin-tabs">
-          <button
-            className={
-              tab ===
-              "registrations"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setTab(
-                "registrations"
-              )
-            }
-          >
-            Washiriki
-          </button>
-
-          <button
-            className={
-              tab === "agents"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setTab("agents")
-            }
-          >
-            Agents
-          </button>
-
-          <button
-            className={
-              tab ===
-              "packages"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setTab("packages")
-            }
-          >
-            Vifurushi
-          </button>
-
-          <button
-            className={
-              tab === "reports"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setTab("reports")
-            }
-          >
-            Ripoti
-          </button>
+        <nav className="tabs">
+          {[
+            [
+              "registrations",
+              "Washiriki",
+            ],
+            ["agents", "Agents"],
+            [
+              "packages",
+              "Vifurushi",
+            ],
+            ["payments", "Malipo"],
+            ["tickets", "Tiketi"],
+            [
+              "checkin",
+              "QR Check-in",
+            ],
+            ["reports", "Ripoti"],
+          ].map(
+            ([
+              value,
+              label,
+            ]) => (
+              <button
+                key={value}
+                className={
+                  tab === value
+                    ? "active"
+                    : ""
+                }
+                onClick={() =>
+                  setTab(value)
+                }
+              >
+                {label}
+              </button>
+            )
+          )}
         </nav>
 
-        {/* ===================================================
-            REGISTRATIONS
-        =================================================== */}
+        {/* ================= WASHIRIKI ================= */}
 
         {tab ===
           "registrations" && (
           <>
             <section className="stats">
-              <StatCard
+              <Stat
                 label="Washiriki Wote"
                 value={
                   registrations.length
                 }
               />
 
-              <StatCard
+              <Stat
                 label="Usajili Mpya"
                 value={
                   newCount
                 }
               />
 
-              <StatCard
+              <Stat
                 label="Wamelipa"
                 value={
                   paidCount
                 }
               />
 
-              <StatCard
+              <Stat
                 label="Wamethibitishwa"
                 value={
                   confirmedCount
@@ -1985,84 +2382,43 @@ export default function Admin() {
               />
             </section>
 
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    Orodha ya
-                    Washiriki
-                  </h2>
+            <Panel>
+              <PanelHeader
+                title="Orodha ya Washiriki"
+                subtitle="Simamia usajili wote wa festival."
+                onRefresh={
+                  loadRegistrations
+                }
+              />
 
-                  <p>
-                    Simamia usajili
-                    wote wa festival.
-                  </p>
-                </div>
-
-                <button
-                  onClick={
-                    loadRegistrations
-                  }
-                >
-                  ↻ Refresh
-                </button>
-              </div>
-
-              <div className="toolbar">
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) =>
-                    setSearch(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Tafuta jina, simu, biashara, kifurushi au agent..."
-                />
-
-                <span>
-                  {
-                    filteredRegistrations.length
-                  }{" "}
-                  washiriki
-                </span>
-              </div>
+              <SearchBar
+                value={search}
+                onChange={
+                  setSearch
+                }
+                placeholder="Tafuta jina, simu, biashara, kifurushi au agent..."
+                count={
+                  filteredRegistrations.length
+                }
+                label="washiriki"
+              />
 
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>
-                        Jina
-                      </th>
-
+                      <th>Jina</th>
                       <th>
                         Biashara
                       </th>
-
-                      <th>
-                        Simu
-                      </th>
-
-                      <th>
-                        Agent
-                      </th>
-
+                      <th>Simu</th>
+                      <th>Agent</th>
                       <th>
                         Kifurushi
                       </th>
-
-                      <th>
-                        Bei
-                      </th>
-
-                      <th>
-                        Hali
-                      </th>
-
-                      <th>
-                        Vitendo
-                      </th>
+                      <th>Bei</th>
+                      <th>Hali</th>
+                      <th>Vitendo</th>
                     </tr>
                   </thead>
 
@@ -2070,305 +2426,249 @@ export default function Admin() {
                     {filteredRegistrations.map(
                       (
                         registration
-                      ) => (
-                        <tr
-                          key={
+                      ) => {
+                        const payment =
+                          getPaymentByRegistration(
                             registration.id
-                          }
-                        >
-                          <td>
-                            <strong>
-                              {
-                                registration.jina_kamili
-                              }
-                            </strong>
+                          );
 
-                            <small>
-                              {formatDate(
-                                registration.created_at
-                              )}
-                            </small>
-                          </td>
+                        const ticket =
+                          getTicketByRegistration(
+                            registration.id
+                          );
 
-                          <td>
-                            {registration.jina_biashara ||
-                              "—"}
-                          </td>
-
-                          <td>
-                            {
-                              registration.namba_simu
+                        return (
+                          <tr
+                            key={
+                              registration.id
                             }
-                          </td>
+                          >
+                            <td>
+                              <strong>
+                                {
+                                  registration.jina_kamili
+                                }
+                              </strong>
 
-                          <td>
-                            {registration.agent_id ? (
-                              <button
-                                type="button"
-                                className="link-button"
-                                onClick={() => {
-                                  const agent =
-                                    getAgent(
-                                      registration.agent_id
-                                    );
-
-                                  if (
-                                    agent
-                                  ) {
-                                    setSelectedAgent(
-                                      agent
-                                    );
-                                  }
-                                }}
-                              >
-                                {getAgentName(
-                                  registration.agent_id
+                              <small>
+                                {formatDate(
+                                  registration.created_at
                                 )}
-                              </button>
-                            ) : (
-                              <span className="public-badge">
-                                Public
-                              </span>
-                            )}
-                          </td>
+                              </small>
+                            </td>
 
-                          <td>
-                            {registration.package_name ||
-                              "—"}
-                          </td>
+                            <td>
+                              {registration.jina_biashara ||
+                                "—"}
+                            </td>
 
-                          <td>
-                            {registration.package_price
-                              ? `TSh ${money(
-                                  registration.package_price
-                                )}`
-                              : "—"}
-                          </td>
-
-                          <td>
-                            <select
-                              value={
-                                registration.hali_ya_usajili ||
-                                "mpya"
+                            <td>
+                              {
+                                registration.namba_simu
                               }
-                              onChange={(
-                                event
-                              ) =>
-                                updateStatus(
-                                  registration.id,
-                                  event
-                                    .target
-                                    .value
-                                )
-                              }
-                            >
-                              {statuses.map(
-                                ([
-                                  value,
-                                  label,
-                                ]) => (
-                                  <option
-                                    key={
-                                      value
-                                    }
-                                    value={
-                                      value
-                                    }
-                                  >
-                                    {
-                                      label
-                                    }
-                                  </option>
-                                )
+                            </td>
+
+                            <td>
+                              {registration.agent_id
+                                ? getAgentName(
+                                    registration.agent_id
+                                  )
+                                : "Public"}
+                            </td>
+
+                            <td>
+                              {registration.package_name ||
+                                "—"}
+                            </td>
+
+                            <td>
+                              TSh{" "}
+                              {money(
+                                registration.package_price
                               )}
-                            </select>
-                          </td>
+                            </td>
 
-                          <td>
-                            <div className="row-actions">
-                              <button
-                                onClick={() =>
-                                  setSelectedRegistration(
-                                    registration
+                            <td>
+                              <select
+                                value={
+                                  registration.hali_ya_usajili ||
+                                  "mpya"
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateStatus(
+                                    registration.id,
+                                    event
+                                      .target
+                                      .value
                                   )
                                 }
                               >
-                                Angalia
-                              </button>
+                                {statuses.map(
+                                  ([
+                                    value,
+                                    label,
+                                  ]) => (
+                                    <option
+                                      key={
+                                        value
+                                      }
+                                      value={
+                                        value
+                                      }
+                                    >
+                                      {
+                                        label
+                                      }
+                                    </option>
+                                  )
+                                )}
+                              </select>
+                            </td>
 
-                              <a
-                                href={`https://wa.me/${whatsappNumber(
-                                  registration.namba_simu
-                                )}?text=${encodeURIComponent(
-                                  `Habari ${
-                                    registration.jina_kamili
-                                  }, tunawasiliana nawe kutoka Mwanza Cherehani Festival 2026 kuhusu usajili wako${
-                                    registration.package_name
-                                      ? `. Umechagua kifurushi cha ${registration.package_name} chenye gharama ya TSh ${money(
-                                          registration.package_price
-                                        )}${
-                                          registration.package_vat_note
-                                            ? ` ${registration.package_vat_note}`
-                                            : ""
-                                        }.`
-                                      : "."
-                                  } Tutakutumia maelekezo rasmi ya malipo.`
-                                )}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                WhatsApp
-                              </a>
-                            </div>
-                          </td>
-                        </tr>
-                      )
+                            <td>
+                              <div className="actions">
+                                <button
+                                  onClick={() =>
+                                    setSelectedRegistration(
+                                      registration
+                                    )
+                                  }
+                                >
+                                  Angalia
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    openPaymentEditor(
+                                      registration
+                                    )
+                                  }
+                                >
+                                  Malipo
+                                </button>
+
+                                {payment?.payment_status ===
+                                  "verified" &&
+                                  !ticket && (
+                                    <button
+                                      onClick={() =>
+                                        issueTicket(
+                                          registration
+                                        )
+                                      }
+                                    >
+                                      Toa Tiketi
+                                    </button>
+                                  )}
+
+                                {ticket && (
+                                  <button
+                                    onClick={() =>
+                                      setSelectedTicket(
+                                        ticket
+                                      )
+                                    }
+                                  >
+                                    Tiketi
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
                     )}
                   </tbody>
                 </table>
               </div>
-
-              {filteredRegistrations.length ===
-                0 && (
-                <EmptyState text="Hakuna usajili uliopatikana." />
-              )}
-            </section>
+            </Panel>
           </>
         )}
 
-        {/* ===================================================
-            AGENTS
-        =================================================== */}
+        {/* ================= AGENTS ================= */}
 
-        {tab ===
-          "agents" && (
+        {tab === "agents" && (
           <>
             <section className="stats">
-              <StatCard
+              <Stat
                 label="Agents Wote"
                 value={
                   agents.length
                 }
               />
 
-              <StatCard
+              <Stat
                 label="Active Agents"
                 value={
-                  activeAgentCount
+                  activeAgents
                 }
               />
 
-              <StatCard
-                label="Usajili wa Agents"
-                value={
-                  agentRegistrationCount
-                }
-              />
-
-              <StatCard
+              <Stat
                 label="Usajili Leo"
                 value={
                   todayCount
                 }
               />
+
+              <Stat
+                label="Kupitia Agents"
+                value={
+                  registrations.filter(
+                    (item) =>
+                      item.agent_id
+                  ).length
+                }
+              />
             </section>
 
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    Agents
-                  </h2>
+            <Panel>
+              <PanelHeader
+                title="Agents"
+                subtitle="Simamia agents na performance zao."
+                onRefresh={
+                  loadAgents
+                }
+              />
 
-                  <p>
-                    Simamia agents
-                    na performance
-                    zao.
-                  </p>
-                </div>
+              <SearchBar
+                value={
+                  agentSearch
+                }
+                onChange={
+                  setAgentSearch
+                }
+                placeholder="Tafuta agent..."
+                count={
+                  filteredAgents.length
+                }
+                label="agents"
+              />
 
-                <button
-                  onClick={
-                    loadAgents
-                  }
-                >
-                  ↻ Refresh
-                </button>
-              </div>
-
-              <div className="agent-information">
-                <strong>
-                  Agent Accounts
-                </strong>
-
-                <p>
-                  Agent anaweza
-                  kufikia taarifa
-                  zake pekee kupitia
-                  /agent.
-                </p>
-              </div>
-
-              <div className="toolbar">
-                <input
-                  type="search"
-                  value={
-                    agentSearch
-                  }
-                  onChange={(event) =>
-                    setAgentSearch(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Tafuta agent kwa jina, simu au email..."
-                />
-
-                <span>
-                  {
-                    filteredAgents.length
-                  }{" "}
-                  agents
-                </span>
-              </div>
-
-              <div className="agent-grid">
+              <div className="cards-grid">
                 {filteredAgents.map(
                   (agent) => {
-                    const agentRegistrations =
+                    const list =
                       getAgentRegistrations(
                         agent.id
                       );
 
-                    const today =
-                      agentRegistrations.filter(
-                        (
-                          registration
-                        ) =>
-                          sameDay(
-                            registration.created_at
-                          )
-                      ).length;
-
                     return (
                       <article
-                        className="agent-card"
+                        className="card"
                         key={
                           agent.id
                         }
                       >
-                        <div className="agent-card-header">
+                        <div className="card-top">
                           <div>
-                            <span
-                              className={
+                            <StatusBadge
+                              active={
                                 agent.is_active
-                                  ? "badge-active"
-                                  : "badge-inactive"
                               }
-                            >
-                              {agent.is_active
-                                ? "ACTIVE"
-                                : "INACTIVE"}
-                            </span>
+                            />
 
                             <h3>
                               {agent.full_name ||
@@ -2376,9 +2676,9 @@ export default function Admin() {
                             </h3>
                           </div>
 
-                          <strong className="agent-count">
+                          <strong className="large-number">
                             {
-                              agentRegistrations.length
+                              list.length
                             }
                           </strong>
                         </div>
@@ -2393,7 +2693,7 @@ export default function Admin() {
                             "—"}
                         </p>
 
-                        <div className="agent-stats">
+                        <div className="mini-stats">
                           <div>
                             <span>
                               Jumla
@@ -2401,7 +2701,7 @@ export default function Admin() {
 
                             <strong>
                               {
-                                agentRegistrations.length
+                                list.length
                               }
                             </strong>
                           </div>
@@ -2413,15 +2713,21 @@ export default function Admin() {
 
                             <strong>
                               {
-                                today
+                                list.filter(
+                                  (
+                                    registration
+                                  ) =>
+                                    sameDay(
+                                      registration.created_at
+                                    )
+                                ).length
                               }
                             </strong>
                           </div>
                         </div>
 
-                        <div className="card-actions">
+                        <div className="actions">
                           <button
-                            className="primary-small"
                             onClick={() =>
                               setSelectedAgent(
                                 agent
@@ -2434,8 +2740,8 @@ export default function Admin() {
                           <button
                             className={
                               agent.is_active
-                                ? "danger-small"
-                                : "success-small"
+                                ? "danger"
+                                : "success"
                             }
                             onClick={() =>
                               toggleAgent(
@@ -2444,8 +2750,8 @@ export default function Admin() {
                             }
                           >
                             {agent.is_active
-                              ? "Zima Agent"
-                              : "Washa Agent"}
+                              ? "Zima"
+                              : "Washa"}
                           </button>
                         </div>
                       </article>
@@ -2453,118 +2759,83 @@ export default function Admin() {
                   }
                 )}
               </div>
-
-              {filteredAgents.length ===
-                0 && (
-                <EmptyState text="Hakuna agent aliyepatikana." />
-              )}
-            </section>
+            </Panel>
           </>
         )}
 
-        {/* ===================================================
-            PACKAGES
-        =================================================== */}
+        {/* ================= PACKAGES ================= */}
 
         {tab ===
           "packages" && (
           <>
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    {editingPackageId
-                      ? "Hariri Kifurushi"
-                      : "Ongeza Kifurushi"}
-                  </h2>
-
-                  <p>
-                    Simamia bei na
-                    vifurushi vya
-                    ushiriki.
-                  </p>
-                </div>
-              </div>
+            <Panel>
+              <PanelHeader
+                title={
+                  editingPackageId
+                    ? "Hariri Kifurushi"
+                    : "Ongeza Kifurushi"
+                }
+                subtitle="Simamia bei na vifurushi."
+              />
 
               <form
-                className="package-form"
+                className="form-grid"
                 onSubmit={
                   savePackage
                 }
               >
-                <label>
-                  Jina la Kifurushi
-                  *
-
+                <Field
+                  label="Jina la Kifurushi *"
+                >
                   <input
                     value={
                       packageForm.name
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          name:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        name:
+                          event.target
+                            .value,
+                      })
                     }
                     required
                   />
-                </label>
+                </Field>
 
-                <label>
-                  Sekta / Aina
-
+                <Field label="Sekta / Aina">
                   <input
                     value={
                       packageForm.category
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          category:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        category:
+                          event.target
+                            .value,
+                      })
                     }
                   />
-                </label>
+                </Field>
 
-                <label>
-                  Ukubwa wa
-                  Tenti / Eneo
-
+                <Field label="Ukubwa wa Tenti / Eneo">
                   <input
                     value={
                       packageForm.tent_size
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          tent_size:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        tent_size:
+                          event.target
+                            .value,
+                      })
                     }
-                    placeholder="Mfano: 5x5 m"
                   />
-                </label>
+                </Field>
 
-                <label>
-                  Bei (TSh) *
-
+                <Field label="Bei (TSh) *">
                   <input
                     type="number"
                     min="0"
@@ -2572,185 +2843,145 @@ export default function Admin() {
                       packageForm.price
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          price:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        price:
+                          event.target
+                            .value,
+                      })
                     }
                     required
                   />
-                </label>
+                </Field>
 
-                <label>
-                  VAT
-
+                <Field label="VAT">
                   <input
                     value={
                       packageForm.vat_note
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          vat_note:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        vat_note:
+                          event.target
+                            .value,
+                      })
                     }
-                    placeholder="+ VAT"
                   />
-                </label>
+                </Field>
 
-                <label>
-                  Idadi ya
-                  Washiriki
-
+                <Field label="Participant Limit">
                   <input
                     type="number"
-                    min="1"
                     value={
                       packageForm.participant_limit
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          participant_limit:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        participant_limit:
+                          event.target
+                            .value,
+                      })
                     }
                   />
-                </label>
+                </Field>
 
-                <label className="package-wide">
-                  Maelezo ya
-                  Kifurushi
-
+                <Field
+                  label="Maelezo"
+                  wide
+                >
                   <textarea
                     rows="4"
                     value={
                       packageForm.description
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          description:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        description:
+                          event.target
+                            .value,
+                      })
                     }
                   />
-                </label>
+                </Field>
 
-                <label className="package-wide">
-                  Vitu
-                  Vilivyojumuishwa
-
+                <Field
+                  label="Inajumuisha"
+                  wide
+                >
                   <textarea
                     rows="4"
                     value={
                       packageForm.included_items
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          included_items:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        included_items:
+                          event.target
+                            .value,
+                      })
                     }
-                    placeholder="Mfano: Meza 1 + Kiti 1"
                   />
-                </label>
+                </Field>
 
-                <label>
-                  Mpangilio
-
+                <Field label="Display Order">
                   <input
                     type="number"
                     value={
                       packageForm.display_order
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          display_order:
-                            event
-                              .target
-                              .value,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        display_order:
+                          event.target
+                            .value,
+                      })
                     }
                   />
-                </label>
+                </Field>
 
-                <label className="checkbox-line">
+                <label className="checkbox">
                   <input
                     type="checkbox"
                     checked={
                       packageForm.is_active
                     }
                     onChange={(event) =>
-                      setPackageForm(
-                        {
-                          ...packageForm,
-
-                          is_active:
-                            event
-                              .target
-                              .checked,
-                        }
-                      )
+                      setPackageForm({
+                        ...packageForm,
+                        is_active:
+                          event.target
+                            .checked,
+                      })
                     }
                   />
 
-                  Kifurushi
-                  kinaonekana kwa
+                  Kinaonekana kwa
                   waombaji
                 </label>
 
-                <div className="package-buttons package-wide">
+                <div className="form-actions wide">
                   <button
-                    className="primary-button"
-                    type="submit"
+                    className="primary"
                     disabled={
                       savingPackage
                     }
                   >
                     {savingPackage
-                      ? "INAHIFADHI..."
+                      ? "Inahifadhi..."
                       : editingPackageId
-                      ? "HIFADHI MABADILIKO"
-                      : "ONGEZA KIFURUSHI"}
+                      ? "HIFADHI"
+                      : "ONGEZA"}
                   </button>
 
                   {editingPackageId && (
                     <button
-                      className="secondary-button"
                       type="button"
+                      className="secondary"
                       onClick={
                         cancelPackageEdit
                       }
@@ -2760,101 +2991,50 @@ export default function Admin() {
                   )}
                 </div>
               </form>
-            </section>
+            </Panel>
 
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    Vifurushi vya
-                    Ushiriki
-                  </h2>
+            <Panel>
+              <PanelHeader
+                title="Vifurushi"
+                subtitle="Vifurushi vinavyoonekana kwenye fomu."
+                onRefresh={
+                  loadPackages
+                }
+              />
 
-                  <p>
-                    Vifurushi
-                    vinavyopatikana
-                    kwenye fomu.
-                  </p>
-                </div>
-
-                <button
-                  onClick={
-                    loadPackages
-                  }
-                >
-                  ↻ Refresh
-                </button>
-              </div>
-
-              <div className="package-grid">
+              <div className="cards-grid">
                 {packages.map(
                   (pkg) => (
                     <article
+                      className="card"
                       key={
                         pkg.id
                       }
-                      className={`package-card ${
-                        !pkg.is_active
-                          ? "package-disabled"
-                          : ""
-                      }`}
                     >
-                      <span
-                        className={
+                      <StatusBadge
+                        active={
                           pkg.is_active
-                            ? "badge-active"
-                            : "badge-inactive"
                         }
-                      >
-                        {pkg.is_active
-                          ? "ACTIVE"
-                          : "INACTIVE"}
-                      </span>
+                      />
 
                       <h3>
-                        {
-                          pkg.name
-                        }
+                        {pkg.name}
                       </h3>
 
-                      <strong className="package-price">
+                      <strong className="price">
                         TSh{" "}
                         {money(
                           pkg.price
                         )}
-
-                        {pkg.vat_note
-                          ? ` ${pkg.vat_note}`
-                          : ""}
                       </strong>
 
                       <p>
-                        {pkg.tent_size ||
-                          "Ukubwa haujawekwa"}
+                        {pkg.description ||
+                          "—"}
                       </p>
 
-                      {pkg.description && (
-                        <p>
-                          {
-                            pkg.description
-                          }
-                        </p>
-                      )}
-
-                      {pkg.included_items && (
-                        <p>
-                          <strong>
-                            Inajumuisha:
-                          </strong>{" "}
-                          {
-                            pkg.included_items
-                          }
-                        </p>
-                      )}
-
-                      <div className="card-actions">
+                      <div className="actions">
                         <button
-                          className="primary-small"
                           onClick={() =>
                             editPackage(
                               pkg
@@ -2867,8 +3047,8 @@ export default function Admin() {
                         <button
                           className={
                             pkg.is_active
-                              ? "danger-small"
-                              : "success-small"
+                              ? "danger"
+                              : "success"
                           }
                           onClick={() =>
                             togglePackage(
@@ -2885,131 +3065,670 @@ export default function Admin() {
                   )
                 )}
               </div>
-            </section>
+            </Panel>
           </>
         )}
 
-        {/* ===================================================
-            REPORTS
-        =================================================== */}
+        {/* ================= PAYMENTS ================= */}
 
         {tab ===
-          "reports" && (
+          "payments" && (
           <>
             <section className="stats">
-              <StatCard
-                label="Washiriki Wote"
+              <Stat
+                label="Payment Records"
                 value={
-                  registrations.length
+                  payments.length
                 }
               />
 
-              <StatCard
-                label="Usajili Leo"
+              <Stat
+                label="Verified"
                 value={
-                  todayCount
+                  verifiedPayments.length
                 }
               />
 
-              <StatCard
-                label="Kupitia Agents"
-                value={
-                  agentRegistrationCount
+              <Stat
+                label="Expected"
+                value={`TSh ${money(
+                  expectedRevenue
+                )}`}
+              />
+
+              <Stat
+                label="Verified Revenue"
+                value={`TSh ${money(
+                  verifiedRevenue
+                )}`}
+              />
+            </section>
+
+            <Panel>
+              <PanelHeader
+                title="Malipo"
+                subtitle="Tengeneza, tuma na hakiki malipo."
+                onRefresh={
+                  loadPayments
                 }
               />
 
-              <StatCard
-                label="Public"
+              <SearchBar
                 value={
-                  publicRegistrationCount
+                  paymentSearch
+                }
+                onChange={
+                  setPaymentSearch
+                }
+                placeholder="Tafuta mshiriki, reference, method..."
+                count={
+                  filteredPayments.length
+                }
+                label="washiriki"
+              />
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Mshiriki</th>
+                      <th>
+                        Kifurushi
+                      </th>
+                      <th>
+                        Amount Due
+                      </th>
+                      <th>
+                        Amount Paid
+                      </th>
+                      <th>Method</th>
+                      <th>Status</th>
+                      <th>Reference</th>
+                      <th>Vitendo</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filteredPayments.map(
+                      (
+                        registration
+                      ) => {
+                        const payment =
+                          getPaymentByRegistration(
+                            registration.id
+                          );
+
+                        return (
+                          <tr
+                            key={
+                              registration.id
+                            }
+                          >
+                            <td>
+                              <strong>
+                                {
+                                  registration.jina_kamili
+                                }
+                              </strong>
+
+                              <small>
+                                {
+                                  registration.namba_simu
+                                }
+                              </small>
+                            </td>
+
+                            <td>
+                              {registration.package_name ||
+                                "—"}
+                            </td>
+
+                            <td>
+                              TSh{" "}
+                              {money(
+                                payment?.amount_due ??
+                                  registration.package_price
+                              )}
+                            </td>
+
+                            <td>
+                              TSh{" "}
+                              {money(
+                                payment?.amount_paid
+                              )}
+                            </td>
+
+                            <td>
+                              {payment?.payment_method ||
+                                "—"}
+                            </td>
+
+                            <td>
+                              {payment
+                                ? paymentStatusLabel(
+                                    payment.payment_status
+                                  )
+                                : "Hakuna Record"}
+                            </td>
+
+                            <td>
+                              {payment?.payment_reference ||
+                                "—"}
+                            </td>
+
+                            <td>
+                              <div className="actions">
+                                <button
+                                  onClick={() =>
+                                    openPaymentEditor(
+                                      registration
+                                    )
+                                  }
+                                >
+                                  {payment
+                                    ? "Hariri"
+                                    : "Tengeneza"}
+                                </button>
+
+                                {payment && (
+                                  <>
+                                    <button
+                                      onClick={() =>
+                                        sendPaymentSms(
+                                          registration,
+                                          payment
+                                        )
+                                      }
+                                    >
+                                      SMS
+                                    </button>
+
+                                    <button
+                                      onClick={() =>
+                                        openPaymentWhatsApp(
+                                          registration,
+                                          payment
+                                        )
+                                      }
+                                    >
+                                      WhatsApp
+                                    </button>
+
+                                    {payment.payment_status !==
+                                      "verified" && (
+                                      <button
+                                        className="success"
+                                        onClick={() =>
+                                          setPaymentStatus(
+                                            payment,
+                                            "verified"
+                                          )
+                                        }
+                                      >
+                                        Verify
+                                      </button>
+                                    )}
+
+                                    {payment.payment_status ===
+                                      "verified" &&
+                                      !getTicketByRegistration(
+                                        registration.id
+                                      ) && (
+                                        <button
+                                          onClick={() =>
+                                            issueTicket(
+                                              registration
+                                            )
+                                          }
+                                        >
+                                          Toa Tiketi
+                                        </button>
+                                      )}
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          </>
+        )}
+
+        {/* ================= TICKETS ================= */}
+
+        {tab ===
+          "tickets" && (
+          <>
+            <section className="stats">
+              <Stat
+                label="Tiketi Zote"
+                value={
+                  tickets.length
+                }
+              />
+
+              <Stat
+                label="Active"
+                value={
+                  activeTickets
+                }
+              />
+
+              <Stat
+                label="Checked In"
+                value={
+                  usedTickets
+                }
+              />
+
+              <Stat
+                label="Remaining"
+                value={
+                  activeTickets
                 }
               />
             </section>
 
-            <section className="money-stats">
-              <div>
-                <span>
-                  Thamani ya
-                  Usajili
-                </span>
+            <Panel>
+              <PanelHeader
+                title="Tiketi"
+                subtitle="Tiketi zinazotolewa baada ya malipo kuhakikiwa."
+                onRefresh={
+                  loadTickets
+                }
+              />
 
-                <strong>
-                  TSh{" "}
-                  {money(
-                    totalRegistrationValue
-                  )}
-                </strong>
-              </div>
-
-              <div>
-                <span>
-                  Waliolipa /
-                  Waliothibitishwa
-                </span>
-
-                <strong>
-                  TSh{" "}
-                  {money(
-                    paidRegistrationValue
-                  )}
-                </strong>
-              </div>
-
-              <div>
-                <span>
-                  Agents Active
-                </span>
-
-                <strong>
-                  {
-                    activeAgentCount
-                  }
-                </strong>
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    Performance ya
-                    Agents
-                  </h2>
-
-                  <p>
-                    Linganisha
-                    usajili wa kila
-                    agent.
-                  </p>
-                </div>
-              </div>
+              <SearchBar
+                value={
+                  ticketSearch
+                }
+                onChange={
+                  setTicketSearch
+                }
+                placeholder="Ticket number, QR token, jina..."
+                count={
+                  filteredTickets.length
+                }
+                label="tiketi"
+              />
 
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>
-                        Agent
+                        Ticket No.
                       </th>
-
+                      <th>Mshiriki</th>
+                      <th>Status</th>
                       <th>
-                        Simu
+                        Issued
                       </th>
-
                       <th>
-                        Jumla
+                        Check-in
                       </th>
+                      <th>Vitendo</th>
+                    </tr>
+                  </thead>
 
-                      <th>
-                        Leo
-                      </th>
+                  <tbody>
+                    {filteredTickets.map(
+                      (ticket) => {
+                        const registration =
+                          getRegistration(
+                            ticket.registration_id
+                          );
 
-                      <th>
-                        Wamelipa
-                      </th>
+                        return (
+                          <tr
+                            key={
+                              ticket.id
+                            }
+                          >
+                            <td>
+                              <strong>
+                                {
+                                  ticket.ticket_number
+                                }
+                              </strong>
+                            </td>
 
+                            <td>
+                              {registration?.jina_kamili ||
+                                "—"}
+
+                              <small>
+                                {registration?.namba_simu ||
+                                  ""}
+                              </small>
+                            </td>
+
+                            <td>
+                              {
+                                ticket.ticket_status
+                              }
+                            </td>
+
+                            <td>
+                              {formatDate(
+                                ticket.issued_at
+                              )}
+                            </td>
+
+                            <td>
+                              {ticket.checked_in_at
+                                ? formatDate(
+                                    ticket.checked_in_at
+                                  )
+                                : "—"}
+                            </td>
+
+                            <td>
+                              <div className="actions">
+                                <button
+                                  onClick={() =>
+                                    setSelectedTicket(
+                                      ticket
+                                    )
+                                  }
+                                >
+                                  Angalia
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    copyTicketToken(
+                                      ticket
+                                    )
+                                  }
+                                >
+                                  Copy QR
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    sendTicketSms(
+                                      ticket
+                                    )
+                                  }
+                                >
+                                  SMS
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    sendTicketWhatsApp(
+                                      ticket
+                                    )
+                                  }
+                                >
+                                  WhatsApp
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          </>
+        )}
+
+        {/* ================= QR CHECK-IN ================= */}
+
+        {tab ===
+          "checkin" && (
+          <>
+            <Panel>
+              <div className="checkin">
+                <div className="checkin-icon">
+                  QR
+                </div>
+
+                <h2>
+                  QR Ticket Check-in
+                </h2>
+
+                <p>
+                  Scan QR kwa scanner
+                  au paste QR token.
+                  Tiketi halali
+                  itatumika mara moja
+                  tu.
+                </p>
+
+                <form
+                  onSubmit={
+                    checkInTicket
+                  }
+                >
+                  <input
+                    autoFocus
+                    value={
+                      qrToken
+                    }
+                    onChange={(event) =>
+                      setQrToken(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Paste / scan QR token"
+                  />
+
+                  <button
+                    className="primary"
+                    disabled={
+                      scanLoading
+                    }
+                  >
+                    {scanLoading
+                      ? "INAKAGUA..."
+                      : "CHECK IN"}
+                  </button>
+                </form>
+
+                {scanResult && (
+                  <div
+                    className={`scan-result ${
+                      scanResult.success
+                        ? "valid"
+                        : "invalid"
+                    }`}
+                  >
+                    <strong>
+                      {scanResult.success
+                        ? "✓ TIKETI HALALI"
+                        : "✕ IMEKATALIWA"}
+                    </strong>
+
+                    <p>
+                      Result:{" "}
+                      {
+                        scanResult.result
+                      }
+                    </p>
+
+                    {scanResult.ticket_number && (
+                      <p>
+                        Ticket:{" "}
+                        {
+                          scanResult.ticket_number
+                        }
+                      </p>
+                    )}
+
+                    {scanResult.checked_in_at && (
+                      <p>
+                        Ilitumika:{" "}
+                        {formatDate(
+                          scanResult.checked_in_at
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHeader
+                title="Recent Scans"
+                subtitle="Audit trail ya scans za hivi karibuni."
+                onRefresh={
+                  loadTicketScans
+                }
+              />
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tarehe</th>
+                      <th>Ticket</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {ticketScans.map(
+                      (scan) => {
+                        const ticket =
+                          tickets.find(
+                            (item) =>
+                              item.id ===
+                              scan.ticket_id
+                          );
+
+                        return (
+                          <tr
+                            key={
+                              scan.id
+                            }
+                          >
+                            <td>
+                              {formatDate(
+                                scan.created_at
+                              )}
+                            </td>
+
+                            <td>
+                              {ticket?.ticket_number ||
+                                "Unknown"}
+                            </td>
+
+                            <td>
+                              {
+                                scan.scan_result
+                              }
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          </>
+        )}
+
+        {/* ================= REPORTS ================= */}
+
+        {tab ===
+          "reports" && (
+          <>
+            <section className="stats">
+              <Stat
+                label="Washiriki"
+                value={
+                  registrations.length
+                }
+              />
+
+              <Stat
+                label="Verified Payments"
+                value={
+                  verifiedPayments.length
+                }
+              />
+
+              <Stat
+                label="Tiketi"
+                value={
+                  tickets.length
+                }
+              />
+
+              <Stat
+                label="Checked In"
+                value={
+                  usedTickets
+                }
+              />
+            </section>
+
+            <section className="money-grid">
+              <article>
+                <span>
+                  Expected Revenue
+                </span>
+
+                <strong>
+                  TSh{" "}
+                  {money(
+                    expectedRevenue
+                  )}
+                </strong>
+              </article>
+
+              <article>
+                <span>
+                  Verified Revenue
+                </span>
+
+                <strong>
+                  TSh{" "}
+                  {money(
+                    verifiedRevenue
+                  )}
+                </strong>
+              </article>
+
+              <article>
+                <span>
+                  Active Agents
+                </span>
+
+                <strong>
+                  {activeAgents}
+                </strong>
+              </article>
+            </section>
+
+            <Panel>
+              <PanelHeader
+                title="Performance ya Agents"
+                subtitle="Usajili na malipo yaliyohakikiwa."
+              />
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Agent</th>
+                      <th>Simu</th>
+                      <th>Jumla</th>
+                      <th>Leo</th>
                       <th>
-                        Hali
+                        Verified
                       </th>
                     </tr>
                   </thead>
@@ -3023,18 +3742,9 @@ export default function Admin() {
                           }
                         >
                           <td>
-                            <button
-                              className="link-button"
-                              onClick={() =>
-                                setSelectedAgent(
-                                  agent
-                                )
-                              }
-                            >
-                              {
-                                agent.full_name
-                              }
-                            </button>
+                            {
+                              agent.full_name
+                            }
 
                             <small>
                               {agent.email ||
@@ -3048,11 +3758,9 @@ export default function Admin() {
                           </td>
 
                           <td>
-                            <strong>
-                              {
-                                agent.total
-                              }
-                            </strong>
+                            {
+                              agent.total
+                            }
                           </td>
 
                           <td>
@@ -3066,82 +3774,17 @@ export default function Admin() {
                               agent.paid
                             }
                           </td>
-
-                          <td>
-                            <span
-                              className={
-                                agent.is_active
-                                  ? "badge-active"
-                                  : "badge-inactive"
-                              }
-                            >
-                              {agent.is_active
-                                ? "ACTIVE"
-                                : "INACTIVE"}
-                            </span>
-                          </td>
                         </tr>
                       )
                     )}
                   </tbody>
                 </table>
               </div>
-            </section>
-
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>
-                    Ripoti kwa
-                    Vifurushi
-                  </h2>
-
-                  <p>
-                    Idadi na thamani
-                    ya usajili kwa
-                    kila kifurushi.
-                  </p>
-                </div>
-              </div>
-
-              <div className="report-grid">
-                {packageReport.map(
-                  (item) => (
-                    <article
-                      className="report-card"
-                      key={
-                        item.name
-                      }
-                    >
-                      <span>
-                        {
-                          item.name
-                        }
-                      </span>
-
-                      <strong>
-                        {
-                          item.count
-                        }
-                      </strong>
-
-                      <small>
-                        TSh{" "}
-                        {money(
-                          item.amount
-                        )}
-                      </small>
-                    </article>
-                  )
-                )}
-              </div>
-            </section>
+            </Panel>
           </>
         )}
 
-        {/* ===================================================
-            REGISTRATION MODAL
-        =================================================== */}
+        {/* ================= REGISTRATION MODAL ================= */}
 
         {selectedRegistration && (
           <Modal
@@ -3157,12 +3800,15 @@ export default function Admin() {
               }
             </h2>
 
-            <p>
-              {selectedRegistration.jina_biashara ||
-                "Hakuna jina la biashara"}
-            </p>
+            <div className="info-grid">
+              <Info
+                label="Biashara"
+                value={
+                  selectedRegistration.jina_biashara ||
+                  "—"
+                }
+              />
 
-            <div className="detail-grid">
               <Info
                 label="Simu"
                 value={
@@ -3187,14 +3833,6 @@ export default function Admin() {
               />
 
               <Info
-                label="Mji/Wilaya"
-                value={
-                  selectedRegistration.mji_wilaya ||
-                  "—"
-                }
-              />
-
-              <Info
                 label="Agent"
                 value={getAgentName(
                   selectedRegistration.agent_id
@@ -3211,29 +3849,9 @@ export default function Admin() {
 
               <Info
                 label="Bei"
-                value={
+                value={`TSh ${money(
                   selectedRegistration.package_price
-                    ? `TSh ${money(
-                        selectedRegistration.package_price
-                      )}`
-                    : "—"
-                }
-              />
-
-              <Info
-                label="VAT"
-                value={
-                  selectedRegistration.package_vat_note ||
-                  "—"
-                }
-              />
-
-              <Info
-                label="Ukubwa"
-                value={
-                  selectedRegistration.package_tent_size ||
-                  "—"
-                }
+                )}`}
               />
 
               <Info
@@ -3242,91 +3860,23 @@ export default function Admin() {
                   selectedRegistration.hali_ya_usajili
                 )}
               />
-
-              <Info
-                label="Tarehe"
-                value={formatDate(
-                  selectedRegistration.created_at
-                )}
-              />
-            </div>
-
-            <section className="modal-section">
-              <h3>
-                Aina ya Ushiriki
-              </h3>
-
-              <p>
-                {(selectedRegistration.aina_ushiriki ||
-                  []).join(
-                  ", "
-                ) || "—"}
-              </p>
-            </section>
-
-            <section className="modal-section">
-              <h3>
-                Bidhaa /
-                Huduma
-              </h3>
-
-              <p>
-                {selectedRegistration.maelezo_bidhaa_huduma ||
-                  "—"}
-              </p>
-            </section>
-
-            <div className="modal-actions">
-              <a
-                href={`https://wa.me/${whatsappNumber(
-                  selectedRegistration.namba_simu
-                )}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                WhatsApp
-              </a>
-
-              {selectedRegistration.barua_pepe && (
-                <a
-                  href={`mailto:${selectedRegistration.barua_pepe}`}
-                >
-                  Email
-                </a>
-              )}
-
-              <a
-                href={`tel:${selectedRegistration.namba_simu}`}
-              >
-                Piga Simu
-              </a>
             </div>
           </Modal>
         )}
 
-        {/* ===================================================
-            AGENT MODAL
-        =================================================== */}
+        {/* ================= AGENT MODAL ================= */}
 
         {selectedAgent && (
           <Modal
             onClose={() =>
-              setSelectedAgent(
-                null
-              )
+              setSelectedAgent(null)
             }
           >
-            <span
-              className={
+            <StatusBadge
+              active={
                 selectedAgent.is_active
-                  ? "badge-active"
-                  : "badge-inactive"
               }
-            >
-              {selectedAgent.is_active
-                ? "ACTIVE"
-                : "INACTIVE"}
-            </span>
+            />
 
             <h2>
               {
@@ -3334,7 +3884,7 @@ export default function Admin() {
               }
             </h2>
 
-            <div className="detail-grid">
+            <div className="info-grid">
               <Info
                 label="Email"
                 value={
@@ -3361,135 +3911,259 @@ export default function Admin() {
               />
 
               <Info
-                label="Usajili Leo"
-                value={
-                  getAgentRegistrations(
-                    selectedAgent.id
-                  ).filter(
-                    (
-                      registration
-                    ) =>
-                      sameDay(
-                        registration.created_at
-                      )
-                  ).length
-                }
-              />
-
-              <Info
-                label="Tarehe ya Kuongezwa"
-                value={formatDate(
-                  selectedAgent.created_at
-                )}
-              />
-
-              <Info
                 label="Agent ID"
                 value={
                   selectedAgent.id
                 }
               />
             </div>
+          </Modal>
+        )}
 
-            <section className="modal-section">
-              <h3>
-                Washiriki wa
-                Agent
-              </h3>
+        {/* ================= PAYMENT MODAL ================= */}
 
-              <div className="agent-registration-list">
-                {getAgentRegistrations(
-                  selectedAgent.id
-                ).length ===
-                0 ? (
-                  <p>
-                    Agent huyu
-                    bado hana
-                    usajili.
-                  </p>
-                ) : (
-                  getAgentRegistrations(
-                    selectedAgent.id
-                  ).map(
-                    (
-                      registration
-                    ) => (
-                      <button
-                        key={
-                          registration.id
-                        }
-                        onClick={() => {
-                          setSelectedAgent(
-                            null
-                          );
+        {selectedPaymentRegistration && (
+          <Modal
+            onClose={
+              closePaymentEditor
+            }
+          >
+            <h2>
+              Malipo —{" "}
+              {
+                selectedPaymentRegistration.jina_kamili
+              }
+            </h2>
 
-                          setSelectedRegistration(
-                            registration
-                          );
-                        }}
-                      >
-                        <div>
-                          <strong>
-                            {
-                              registration.jina_kamili
-                            }
-                          </strong>
-
-                          <small>
-                            {registration.jina_biashara ||
-                              "—"}
-                          </small>
-                        </div>
-
-                        <span>
-                          {formatDate(
-                            registration.created_at
-                          )}
-                        </span>
-                      </button>
-                    )
-                  )
-                )}
-              </div>
-            </section>
-
-            <div className="modal-actions">
-              {selectedAgent.phone && (
-                <a
-                  href={`https://wa.me/${whatsappNumber(
-                    selectedAgent.phone
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  WhatsApp
-                </a>
+            <p>
+              {
+                selectedPaymentRegistration.package_name
+              }{" "}
+              • TSh{" "}
+              {money(
+                selectedPaymentRegistration.package_price
               )}
+            </p>
 
-              {selectedAgent.email && (
-                <a
-                  href={`mailto:${selectedAgent.email}`}
-                >
-                  Email
-                </a>
-              )}
+            <form
+              className="payment-form"
+              onSubmit={
+                savePayment
+              }
+            >
+              <Field label="Amount Due">
+                <input
+                  type="number"
+                  value={
+                    paymentForm.amount_due
+                  }
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      amount_due:
+                        event.target
+                          .value,
+                    })
+                  }
+                />
+              </Field>
+
+              <Field label="Amount Paid">
+                <input
+                  type="number"
+                  value={
+                    paymentForm.amount_paid
+                  }
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      amount_paid:
+                        event.target
+                          .value,
+                    })
+                  }
+                />
+              </Field>
+
+              <Field label="Payment Method">
+                <input
+                  placeholder="M-Pesa / Bank / Cash..."
+                  value={
+                    paymentForm.payment_method
+                  }
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      payment_method:
+                        event.target
+                          .value,
+                    })
+                  }
+                />
+              </Field>
+
+              <Field label="Payment Reference">
+                <input
+                  value={
+                    paymentForm.payment_reference
+                  }
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      payment_reference:
+                        event.target
+                          .value,
+                    })
+                  }
+                />
+              </Field>
+
+              <Field
+                label="Maelekezo / Notes"
+                wide
+              >
+                <textarea
+                  rows="5"
+                  placeholder="Mfano: Lipa kupitia M-Pesa namba ... jina ..."
+                  value={
+                    paymentForm.notes
+                  }
+                  onChange={(event) =>
+                    setPaymentForm({
+                      ...paymentForm,
+                      notes:
+                        event.target
+                          .value,
+                    })
+                  }
+                />
+              </Field>
 
               <button
-                className={
-                  selectedAgent.is_active
-                    ? "danger-small"
-                    : "success-small"
-                }
-                onClick={() =>
-                  toggleAgent(
-                    selectedAgent
-                  )
+                className="primary wide"
+                disabled={
+                  paymentSaving
                 }
               >
-                {selectedAgent.is_active
-                  ? "Zima Agent"
-                  : "Washa Agent"}
+                {paymentSaving
+                  ? "INAHIFADHI..."
+                  : "HIFADHI MALIPO"}
               </button>
+            </form>
+          </Modal>
+        )}
+
+        {/* ================= TICKET MODAL ================= */}
+
+        {selectedTicket && (
+          <Modal
+            onClose={() =>
+              setSelectedTicket(null)
+            }
+          >
+            <div className="ticket">
+              <div className="badge secure">
+                OFFICIAL TICKET
+              </div>
+
+              <h1>
+                {
+                  selectedTicket.ticket_number
+                }
+              </h1>
+
+              <p>
+                {getRegistration(
+                  selectedTicket.registration_id
+                )?.jina_kamili ||
+                  "Mshiriki"}
+              </p>
+
+              <div className="qr-token-box">
+                <small>
+                  SECURE QR TOKEN
+                </small>
+
+                <code>
+                  {
+                    selectedTicket.qr_token
+                  }
+                </code>
+              </div>
+
+              <div className="info-grid">
+                <Info
+                  label="Status"
+                  value={
+                    selectedTicket.ticket_status
+                  }
+                />
+
+                <Info
+                  label="Issued"
+                  value={formatDate(
+                    selectedTicket.issued_at
+                  )}
+                />
+
+                <Info
+                  label="Checked In"
+                  value={
+                    selectedTicket.checked_in_at
+                      ? formatDate(
+                          selectedTicket.checked_in_at
+                        )
+                      : "Bado"
+                  }
+                />
+              </div>
+
+              <div className="actions ticket-actions">
+                <button
+                  onClick={() =>
+                    copyTicketToken(
+                      selectedTicket
+                    )
+                  }
+                >
+                  Copy QR Token
+                </button>
+
+                <button
+                  onClick={() =>
+                    sendTicketSms(
+                      selectedTicket
+                    )
+                  }
+                >
+                  Tuma SMS
+                </button>
+
+                <button
+                  onClick={() =>
+                    sendTicketWhatsApp(
+                      selectedTicket
+                    )
+                  }
+                >
+                  WhatsApp
+                </button>
+
+                {selectedTicket.ticket_status ===
+                  "active" && (
+                  <button
+                    className="danger"
+                    onClick={() =>
+                      updateTicketStatus(
+                        selectedTicket,
+                        "revoked"
+                      )
+                    }
+                  >
+                    Revoke
+                  </button>
+                )}
+              </div>
             </div>
           </Modal>
         )}
@@ -3499,64 +4173,131 @@ export default function Admin() {
 }
 
 /* =========================================================
-   STAT CARD
+   SMALL COMPONENTS
 ========================================================= */
 
-function StatCard({
+function Stat({
   label,
   value,
 }) {
   return (
-    <article className="stat-card">
-      <span>
-        {label}
-      </span>
-
-      <strong>
-        {value}
-      </strong>
+    <article className="stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </article>
   );
 }
 
-/* =========================================================
-   INFO
-========================================================= */
+function Panel({
+  children,
+}) {
+  return (
+    <section className="panel">
+      {children}
+    </section>
+  );
+}
+
+function PanelHeader({
+  title,
+  subtitle,
+  onRefresh,
+}) {
+  return (
+    <div className="panel-header">
+      <div>
+        <h2>{title}</h2>
+        {subtitle && (
+          <p>{subtitle}</p>
+        )}
+      </div>
+
+      {onRefresh && (
+        <button
+          onClick={onRefresh}
+        >
+          ↻ Refresh
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SearchBar({
+  value,
+  onChange,
+  placeholder,
+  count,
+  label,
+}) {
+  return (
+    <div className="searchbar">
+      <input
+        type="search"
+        value={value}
+        onChange={(event) =>
+          onChange(
+            event.target.value
+          )
+        }
+        placeholder={
+          placeholder
+        }
+      />
+
+      <span>
+        {count} {label}
+      </span>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+  wide,
+}) {
+  return (
+    <label
+      className={
+        wide ? "wide" : ""
+      }
+    >
+      <strong>{label}</strong>
+      {children}
+    </label>
+  );
+}
 
 function Info({
   label,
   value,
 }) {
   return (
-    <div className="info-box">
-      <span>
-        {label}
-      </span>
-
-      <strong>
-        {value}
-      </strong>
+    <div className="info">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
 
-/* =========================================================
-   EMPTY STATE
-========================================================= */
-
-function EmptyState({
-  text,
+function StatusBadge({
+  active,
 }) {
   return (
-    <div className="empty-state">
-      {text}
-    </div>
+    <span
+      className={
+        active
+          ? "status active"
+          : "status inactive"
+      }
+    >
+      {active
+        ? "ACTIVE"
+        : "INACTIVE"}
+    </span>
   );
 }
-
-/* =========================================================
-   MODAL
-========================================================= */
 
 function Modal({
   children,
@@ -3567,66 +4308,46 @@ function Modal({
       className="modal-backdrop"
       onMouseDown={onClose}
     >
-      <div
+      <section
         className="modal"
         onMouseDown={(event) =>
           event.stopPropagation()
         }
       >
         <button
-          type="button"
           className="modal-close"
           onClick={onClose}
-          aria-label="Close"
         >
           ×
         </button>
 
         {children}
-      </div>
+      </section>
     </div>
   );
 }
 
 /* =========================================================
-   STYLES
+   CSS
 ========================================================= */
 
-const adminStyles = `
-:root {
-  color-scheme: light;
-}
-
+const styles = `
 * {
   box-sizing: border-box;
 }
 
-html {
-  min-height: 100%;
-}
-
 body {
   margin: 0;
-  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
   background: #f3f5f4;
   color: #17201b;
-  font-family:
-    Inter,
-    Arial,
-    Helvetica,
-    sans-serif;
 }
 
 button,
 input,
-textarea,
-select {
+select,
+textarea {
   font: inherit;
-}
-
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -3634,438 +4355,224 @@ button {
 }
 
 button:disabled {
+  opacity: .55;
   cursor: not-allowed;
-  opacity: .6;
 }
 
-/* =========================================================
-   AUTH
-========================================================= */
+.loading-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #14532d;
+}
+
+/* AUTH */
 
 .auth-page {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 20px;
   background:
-    radial-gradient(
-      circle at top right,
-      rgba(250,204,21,.16),
-      transparent 25%
-    ),
     linear-gradient(
-      145deg,
-      #061b10,
-      #0d4325 60%,
-      #166534
+      135deg,
+      #071b10,
+      #14532d
     );
 }
 
 .auth-card {
-  width: min(
-    460px,
-    100%
-  );
-  background: #ffffff;
-  border-radius: 22px;
+  width: min(480px,100%);
   padding: 34px;
+  border-radius: 20px;
+  background: white;
   box-shadow:
     0 30px 90px
     rgba(0,0,0,.30);
 }
 
-.mfa-card {
-  width: min(
-    520px,
-    100%
-  );
-}
-
-.security-badge {
-  display: inline-flex;
-  align-items: center;
-  background: #facc15;
-  color: #17201b;
-  padding: 7px 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: .06em;
-}
-
 .auth-card h1 {
-  margin: 18px 0 5px;
   color: #14532d;
-}
-
-.auth-card h2 {
-  margin: 8px 0;
-  font-size: 19px;
-}
-
-.auth-description {
-  margin:
-    8px 0 24px;
-  color: #6b7280;
-  line-height: 1.55;
 }
 
 .auth-card label {
   display: block;
-  margin: 16px 0;
+  margin: 17px 0;
   font-weight: 800;
 }
 
 .auth-card input {
-  display: block;
   width: 100%;
-  margin-top: 8px;
-  border:
-    1px solid
-    #d1d5db;
-  border-radius: 11px;
-  padding: 14px;
-  background: white;
+  margin-top: 7px;
+  padding: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
 }
 
-.auth-card input:focus {
-  outline: none;
-  border-color: #166534;
-  box-shadow:
-    0 0 0 3px
-    rgba(22,101,52,.12);
-}
-
-.primary-auth-button {
-  width: 100%;
-  border: 0;
-  border-radius: 11px;
-  background: #166534;
-  color: white;
-  padding: 15px;
+.mfa-input {
+  text-align: center;
+  font-size: 24px !important;
+  letter-spacing: .25em;
   font-weight: 900;
-  margin-top: 6px;
 }
 
-.secondary-auth-button {
-  width: 100%;
-  border:
-    1px solid
-    #166534;
-  border-radius: 11px;
-  background: white;
-  color: #166534;
+.mfa-qr {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: #f9fafb;
+  border-radius: 14px;
+}
+
+.mfa-qr img {
+  width: min(260px,100%);
+}
+
+.secret {
+  margin: 14px 0;
   padding: 13px;
-  font-weight: 800;
-  margin-top: 12px;
-}
-
-.logout-auth-button {
-  width: 100%;
-  border: 0;
-  border-radius: 11px;
   background: #f3f4f6;
-  color: #374151;
-  padding: 13px;
-  font-weight: 800;
-  margin-top: 10px;
+  border-radius: 9px;
+}
+
+.secret small {
+  display: block;
+  color: #6b7280;
+}
+
+.secret code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 5px;
 }
 
 .back-link {
   display: block;
-  margin-top: 20px;
   text-align: center;
+  margin-top: 18px;
   color: #166534;
   text-decoration: none;
-  font-weight: 700;
 }
 
-.error-box,
+.error,
 .top-error {
+  padding: 12px;
   background: #fef2f2;
-  border:
-    1px solid
-    #fecaca;
+  border: 1px solid #fecaca;
   color: #991b1b;
-  padding: 12px 14px;
-  border-radius: 10px;
-  line-height: 1.45;
+  border-radius: 9px;
 }
 
-.error-box {
-  margin: 16px 0;
+.top-error {
+  margin: 20px max(20px,5vw) 0;
 }
 
-/* =========================================================
-   MFA
-========================================================= */
+/* HEADER */
 
-.qr-container {
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: #f9fafb;
-  border:
-    1px solid
-    #e5e7eb;
-  border-radius: 16px;
-  margin: 18px 0;
-}
-
-.qr-container img {
-  display: block;
-  width: min(
-    260px,
-    100%
-  );
-  height: auto;
-}
-
-.secret-box {
-  padding: 14px;
-  border-radius: 11px;
-  background: #f9fafb;
-  border:
-    1px solid
-    #e5e7eb;
-  margin: 14px 0;
-}
-
-.secret-box span {
-  display: block;
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 7px;
-}
-
-.secret-box code {
-  display: block;
-  overflow-wrap: anywhere;
-  color: #14532d;
-  font-weight: 800;
-}
-
-.security-note {
-  background: #f0fdf4;
-  border:
-    1px solid
-    #bbf7d0;
-  color: #166534;
-  padding: 13px;
-  border-radius: 10px;
-  line-height: 1.5;
-}
-
-.mfa-code {
-  text-align: center;
-  font-size: 24px !important;
-  font-weight: 900;
-  letter-spacing: .30em;
-}
-
-/* =========================================================
-   LOADING
-========================================================= */
-
-.admin-loading {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  background: #f3f5f4;
-  color: #14532d;
-  font-weight: 800;
-}
-
-.loader-dot {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border:
-    3px solid
-    #d1fae5;
-  border-top-color:
-    #166534;
-  animation:
-    adminSpin
-    .8s linear infinite;
-}
-
-@keyframes adminSpin {
-  to {
-    transform:
-      rotate(360deg);
-  }
-}
-
-/* =========================================================
-   DASHBOARD
-========================================================= */
-
-.dashboard {
-  min-height: 100vh;
-}
-
-.admin-header {
-  background:
-    linear-gradient(
-      135deg,
-      #0b3a20,
-      #14532d
-    );
+.header {
+  background: #14532d;
   color: white;
-  padding:
-    24px
-    max(20px,5vw);
+  padding: 22px max(20px,5vw);
   display: flex;
-  justify-content:
-    space-between;
   align-items: center;
+  justify-content: space-between;
   gap: 20px;
 }
 
-.admin-header h1 {
-  margin:
-    5px 0 0;
-}
-
-.admin-header small {
-  opacity: .8;
-}
-
-.secure-session {
-  display: inline-flex;
-  margin-top: 10px;
-  padding: 5px 9px;
-  background:
-    rgba(255,255,255,.12);
-  border:
-    1px solid
-    rgba(255,255,255,.18);
-  border-radius: 999px;
-  font-size: 11px;
-  color: #bbf7d0;
+.header h1 {
+  margin: 5px 0;
 }
 
 .header-actions {
   display: flex;
-  gap: 9px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .header-actions a,
 .header-actions button {
-  border:
-    1px solid
-    rgba(255,255,255,.28);
-  background:
-    rgba(255,255,255,.10);
+  padding: 10px 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.10);
   color: white;
-  border-radius: 9px;
   text-decoration: none;
-  padding: 10px 14px;
 }
 
-.top-error {
-  margin:
-    20px
-    max(20px,5vw)
-    0;
+.mfa-secured {
+  font-size: 11px;
+  color: #bbf7d0;
 }
 
-/* =========================================================
-   TABS
-========================================================= */
+/* TABS */
 
-.admin-tabs {
+.tabs {
   display: flex;
   gap: 9px;
-  padding:
-    20px
-    max(20px,5vw)
-    0;
+  padding: 20px max(20px,5vw) 0;
   overflow-x: auto;
 }
 
-.admin-tabs button {
+.tabs button {
   border: 0;
-  border-radius: 10px;
-  background: #e5e7eb;
-  color: #374151;
-  padding: 12px 20px;
-  font-weight: 900;
+  border-radius: 9px;
+  padding: 11px 17px;
   white-space: nowrap;
+  font-weight: 800;
 }
 
-.admin-tabs button.active {
+.tabs .active {
   background: #166534;
   color: white;
 }
 
-/* =========================================================
-   STATS
-========================================================= */
+/* STATS */
 
 .stats {
+  padding: 24px max(20px,5vw);
   display: grid;
-  grid-template-columns:
-    repeat(4,1fr);
-  gap: 15px;
-  padding:
-    25px
-    max(20px,5vw);
+  grid-template-columns: repeat(4,1fr);
+  gap: 14px;
 }
 
-.stat-card {
+.stat {
   background: white;
-  border-radius: 15px;
-  padding: 20px;
-  border:
-    1px solid
-    #ecefec;
-  box-shadow:
-    0 3px 12px
-    rgba(0,0,0,.03);
+  border-radius: 13px;
+  padding: 19px;
+  border: 1px solid #e5e7eb;
 }
 
-.stat-card span {
+.stat span {
   color: #6b7280;
 }
 
-.stat-card strong {
+.stat strong {
   display: block;
-  color: #14532d;
-  font-size: 31px;
   margin-top: 8px;
+  font-size: 28px;
+  color: #14532d;
 }
 
-/* =========================================================
-   PANEL
-========================================================= */
+/* PANEL */
 
 .panel {
-  margin:
-    25px
-    max(20px,5vw);
-  padding: 23px;
+  margin: 24px max(20px,5vw);
+  padding: 22px;
+  border-radius: 15px;
   background: white;
-  border-radius: 17px;
-  border:
-    1px solid
-    #ecefec;
+  border: 1px solid #e5e7eb;
 }
 
 .panel-header {
   display: flex;
-  justify-content:
-    space-between;
+  justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 15px;
 }
 
 .panel-header h2 {
-  margin:
-    0 0 5px;
+  margin: 0 0 5px;
 }
 
 .panel-header p {
@@ -4074,45 +4581,34 @@ button:disabled {
 }
 
 .panel-header > button {
-  border:
-    1px solid
-    #d1d5db;
+  border: 1px solid #d1d5db;
   background: white;
-  padding: 9px 13px;
+  padding: 9px 12px;
   border-radius: 8px;
 }
 
-/* =========================================================
-   TOOLBAR
-========================================================= */
+/* SEARCH */
 
-.toolbar {
+.searchbar {
+  margin: 20px 0;
   display: flex;
-  align-items: center;
-  justify-content:
-    space-between;
+  justify-content: space-between;
   gap: 15px;
-  margin: 22px 0;
+  align-items: center;
 }
 
-.toolbar input {
-  width:
-    min(520px,100%);
-  border:
-    1px solid
-    #d1d5db;
-  border-radius: 10px;
-  padding: 12px 14px;
+.searchbar input {
+  width: min(520px,100%);
+  padding: 11px 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
 }
 
-.toolbar span {
+.searchbar span {
   color: #6b7280;
-  white-space: nowrap;
 }
 
-/* =========================================================
-   TABLE
-========================================================= */
+/* TABLE */
 
 .table-wrap {
   overflow-x: auto;
@@ -4120,578 +4616,433 @@ button:disabled {
 
 table {
   width: 100%;
-  min-width: 1080px;
-  border-collapse:
-    collapse;
+  min-width: 1000px;
+  border-collapse: collapse;
 }
 
 th,
 td {
+  padding: 13px 9px;
+  border-bottom: 1px solid #e5e7eb;
   text-align: left;
   vertical-align: middle;
-  padding: 14px 10px;
-  border-bottom:
-    1px solid
-    #e5e7eb;
 }
 
 th {
-  color: #374151;
   font-size: 13px;
 }
 
 td small {
   display: block;
-  margin-top: 4px;
   color: #6b7280;
+  margin-top: 4px;
 }
 
 td select {
-  min-width: 190px;
-  width: 100%;
-  border:
-    1px solid
-    #d1d5db;
-  border-radius: 9px;
-  background: white;
-  padding: 9px;
+  min-width: 180px;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
 }
 
-.row-actions {
+.actions {
   display: flex;
   gap: 7px;
+  flex-wrap: wrap;
 }
 
-.row-actions button,
-.row-actions a {
+.actions button,
+.actions a {
   border: 0;
   border-radius: 7px;
   background: #166534;
   color: white;
-  text-decoration: none;
   padding: 8px 10px;
+  text-decoration: none;
 }
 
-/* =========================================================
-   LINKS / BADGES
-========================================================= */
-
-.link-button {
-  border: 0;
-  background: transparent;
-  color: #166534;
-  padding: 0;
-  font-weight: 900;
-}
-
-.public-badge {
-  display: inline-flex;
-  background: #e5e7eb;
-  color: #374151;
-  padding: 5px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.badge-active,
-.badge-inactive {
-  display: inline-flex;
-  padding: 5px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.badge-active {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.badge-inactive {
+.actions .danger,
+.danger {
   background: #fee2e2;
   color: #991b1b;
 }
 
-/* =========================================================
-   AGENT
-========================================================= */
-
-.agent-information {
-  margin: 18px 0;
-  padding: 14px;
-  background: #f0fdf4;
-  border:
-    1px solid
-    #bbf7d0;
-  border-radius: 11px;
-}
-
-.agent-information p {
-  margin:
-    5px 0 0;
+.actions .success,
+.success {
+  background: #dcfce7;
   color: #166534;
 }
 
-.agent-grid {
+/* CARDS */
+
+.cards-grid {
   display: grid;
-  grid-template-columns:
-    repeat(3,1fr);
-  gap: 16px;
+  grid-template-columns: repeat(3,1fr);
+  gap: 15px;
+  margin-top: 20px;
 }
 
-.agent-card,
-.package-card {
-  padding: 20px;
-  border:
-    1px solid
-    #e5e7eb;
-  border-radius: 14px;
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 13px;
+  padding: 18px;
 }
 
-.agent-card-header {
+.card-top {
   display: flex;
-  justify-content:
-    space-between;
+  justify-content: space-between;
   gap: 15px;
 }
 
-.agent-card h3 {
-  margin:
-    10px 0 4px;
-}
-
-.agent-card p {
-  color: #6b7280;
-  overflow-wrap: anywhere;
-}
-
-.agent-count {
+.large-number {
+  font-size: 30px;
   color: #14532d;
-  font-size: 32px;
 }
 
-.agent-stats {
+.status {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.status.active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status.inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.mini-stats {
   display: grid;
-  grid-template-columns:
-    1fr 1fr;
-  gap: 10px;
-  margin: 18px 0;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin: 15px 0;
 }
 
-.agent-stats div {
+.mini-stats div {
   background: #f9fafb;
-  border-radius: 10px;
-  padding: 12px;
+  padding: 11px;
+  border-radius: 8px;
 }
 
-.agent-stats span {
+.mini-stats span {
   display: block;
   color: #6b7280;
   font-size: 12px;
 }
 
-.agent-stats strong {
+.mini-stats strong {
+  font-size: 21px;
+  color: #14532d;
+}
+
+.price {
   display: block;
   color: #14532d;
   font-size: 22px;
-  margin-top: 3px;
 }
 
-/* =========================================================
-   BUTTONS
-========================================================= */
+/* FORMS */
 
-.card-actions,
-.package-buttons,
-.modal-actions {
-  display: flex;
-  gap: 9px;
-  flex-wrap: wrap;
-}
-
-.primary-small,
-.danger-small,
-.success-small,
-.primary-button,
-.secondary-button {
-  border: 0;
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-weight: 800;
-}
-
-.primary-small,
-.primary-button {
-  background: #166534;
-  color: white;
-}
-
-.danger-small {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.success-small {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.secondary-button {
-  background: #f3f4f6;
-  color: #374151;
-}
-
-/* =========================================================
-   PACKAGE FORM
-========================================================= */
-
-.package-form {
+.form-grid,
+.payment-form {
   display: grid;
-  grid-template-columns:
-    repeat(2,1fr);
-  gap: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
   margin-top: 20px;
 }
 
-.package-form label {
-  font-weight: 800;
+.form-grid label,
+.payment-form label {
+  display: block;
 }
 
-.package-form input,
-.package-form textarea {
-  display: block;
+.form-grid input,
+.form-grid textarea,
+.payment-form input,
+.payment-form textarea {
   width: 100%;
   margin-top: 7px;
-  border:
-    1px solid
-    #d1d5db;
-  border-radius: 9px;
-  padding: 12px;
+  padding: 11px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
 }
 
-.package-wide {
-  grid-column:
-    1 / -1;
+.wide {
+  grid-column: 1 / -1;
 }
 
-.checkbox-line {
-  display: flex;
+.checkbox {
+  display: flex !important;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
 }
 
-.checkbox-line input {
-  display: inline-block;
+.checkbox input {
   width: auto;
   margin: 0;
 }
 
-/* =========================================================
-   PACKAGE GRID
-========================================================= */
-
-.package-grid {
-  display: grid;
-  grid-template-columns:
-    repeat(2,1fr);
-  gap: 16px;
-  margin-top: 20px;
+.form-actions {
+  display: flex;
+  gap: 9px;
 }
 
-.package-disabled {
-  opacity: .58;
+.primary,
+.secondary {
+  border: 0;
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-weight: 800;
 }
 
-.package-price {
-  display: block;
-  margin: 8px 0;
-  color: #14532d;
-  font-size: 22px;
-}
-
-/* =========================================================
-   REPORTS
-========================================================= */
-
-.money-stats {
-  display: grid;
-  grid-template-columns:
-    repeat(3,1fr);
-  gap: 15px;
-  margin:
-    0
-    max(20px,5vw)
-    25px;
-}
-
-.money-stats > div {
-  padding: 22px;
-  border-radius: 14px;
-  background: #14532d;
+.primary {
+  background: #166534;
   color: white;
 }
 
-.money-stats span {
-  display: block;
-  opacity: .80;
+.secondary {
+  background: #e5e7eb;
+  color: #374151;
 }
 
-.money-stats strong {
+/* CHECKIN */
+
+.checkin {
+  width: min(650px,100%);
+  margin: auto;
+  text-align: center;
+  padding: 30px 10px;
+}
+
+.checkin-icon {
+  margin: auto;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: #14532d;
+  color: white;
+  font-weight: 900;
+  font-size: 20px;
+}
+
+.checkin form {
+  display: flex;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.checkin input {
+  flex: 1;
+  padding: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+}
+
+.scan-result {
+  margin-top: 20px;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.scan-result.valid {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.scan-result.invalid {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* MONEY */
+
+.money-grid {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 14px;
+  margin: 0 max(20px,5vw) 24px;
+}
+
+.money-grid article {
+  background: #14532d;
+  color: white;
+  border-radius: 13px;
+  padding: 20px;
+}
+
+.money-grid span {
+  opacity: .8;
+}
+
+.money-grid strong {
   display: block;
-  margin-top: 9px;
+  margin-top: 8px;
   font-size: 25px;
 }
 
-.report-grid {
-  display: grid;
-  grid-template-columns:
-    repeat(3,1fr);
-  gap: 15px;
-}
-
-.report-card {
-  padding: 18px;
-  border:
-    1px solid
-    #e5e7eb;
-  border-radius: 12px;
-  background: #f9fafb;
-}
-
-.report-card span {
-  display: block;
-  color: #6b7280;
-}
-
-.report-card strong {
-  display: block;
-  margin: 8px 0;
-  color: #14532d;
-  font-size: 32px;
-}
-
-.report-card small {
-  color: #6b7280;
-}
-
-/* =========================================================
-   MODAL
-========================================================= */
+/* MODAL */
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 9999;
+  background: rgba(0,0,0,.58);
+  padding: 20px;
   display: grid;
   place-items: center;
-  padding: 20px;
-  background:
-    rgba(0,0,0,.58);
 }
 
 .modal {
   position: relative;
-  width:
-    min(780px,100%);
+  width: min(780px,100%);
   max-height: 90vh;
   overflow-y: auto;
+  padding: 27px;
   background: white;
-  border-radius: 18px;
-  padding: 28px;
-  box-shadow:
-    0 30px 100px
-    rgba(0,0,0,.28);
+  border-radius: 17px;
 }
 
 .modal-close {
   position: absolute;
-  top: 10px;
-  right: 16px;
+  top: 9px;
+  right: 15px;
   border: 0;
-  background: transparent;
-  font-size: 32px;
+  background: none;
+  font-size: 30px;
 }
 
-.detail-grid {
+.info-grid {
   display: grid;
-  grid-template-columns:
-    repeat(2,1fr);
-  gap: 12px;
-  margin-top: 20px;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  margin-top: 18px;
 }
 
-.info-box {
-  padding: 13px;
-  border-radius: 9px;
+.info {
   background: #f9fafb;
-  overflow: hidden;
+  padding: 12px;
+  border-radius: 8px;
 }
 
-.info-box span {
+.info span {
   display: block;
   color: #6b7280;
   font-size: 12px;
 }
 
-.info-box strong {
+.info strong {
   display: block;
-  margin-top: 5px;
+  margin-top: 4px;
   overflow-wrap: anywhere;
 }
 
-.modal-section {
-  margin-top: 22px;
-}
+/* TICKET */
 
-.modal-section h3 {
-  margin-bottom: 6px;
-}
-
-.modal-actions {
-  margin-top: 24px;
-}
-
-.modal-actions a,
-.modal-actions button {
-  border: 0;
-  border-radius: 8px;
-  background: #166534;
-  color: white;
-  text-decoration: none;
-  padding: 10px 14px;
-}
-
-/* =========================================================
-   AGENT REGISTRATION LIST
-========================================================= */
-
-.agent-registration-list {
-  display: grid;
-  gap: 8px;
-}
-
-.agent-registration-list button {
-  width: 100%;
-  border:
-    1px solid
-    #e5e7eb;
-  border-radius: 9px;
-  background: #f9fafb;
-  padding: 12px;
-  display: flex;
-  justify-content:
-    space-between;
-  align-items: center;
-  gap: 15px;
-  text-align: left;
-}
-
-.agent-registration-list small {
-  display: block;
-  color: #6b7280;
-  margin-top: 4px;
-}
-
-/* =========================================================
-   EMPTY
-========================================================= */
-
-.empty-state {
-  padding: 40px;
+.ticket {
   text-align: center;
-  color: #6b7280;
 }
 
-/* =========================================================
-   RESPONSIVE
-========================================================= */
+.badge {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
 
-@media (
-  max-width: 1000px
-) {
-  .agent-grid,
-  .report-grid {
-    grid-template-columns:
-      repeat(2,1fr);
+.badge.admin {
+  background: #facc15;
+}
+
+.badge.secure {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.qr-token-box {
+  margin: 20px 0;
+  padding: 18px;
+  border: 2px dashed #166534;
+  border-radius: 12px;
+  background: #f0fdf4;
+}
+
+.qr-token-box small {
+  display: block;
+  color: #166534;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.qr-token-box code {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 16px;
+}
+
+.ticket-actions {
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1000px) {
+  .cards-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
-@media (
-  max-width: 800px
-) {
-  .admin-header {
-    flex-direction:
-      column;
-    align-items:
-      flex-start;
+@media (max-width: 800px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .stats,
-  .money-stats,
-  .package-form,
-  .package-grid {
-    grid-template-columns:
-      repeat(2,1fr);
+  .money-grid,
+  .form-grid,
+  .payment-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .stats,
+  .money-grid,
+  .cards-grid,
+  .form-grid,
+  .payment-form,
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wide {
+    grid-column: auto;
+  }
+
+  .searchbar,
+  .checkin form {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .header-actions {
     width: 100%;
-  }
-}
-
-@media (
-  max-width: 600px
-) {
-  .auth-page {
-    padding: 15px;
-  }
-
-  .auth-card {
-    padding: 24px;
-  }
-
-  .stats,
-  .money-stats,
-  .agent-grid,
-  .package-form,
-  .package-grid,
-  .report-grid,
-  .detail-grid {
-    grid-template-columns:
-      1fr;
-  }
-
-  .package-wide {
-    grid-column: auto;
-  }
-
-  .toolbar {
-    flex-direction:
-      column;
-    align-items:
-      stretch;
-  }
-
-  .toolbar span {
-    white-space:
-      normal;
-  }
-
-  .panel-header {
-    align-items:
-      flex-start;
   }
 
   .header-actions a,
   .header-actions button {
     flex: 1;
     text-align: center;
-  }
-
-  .row-actions {
-    flex-direction:
-      column;
   }
 }
 `;
