@@ -719,11 +719,6 @@ export default function Admin() {
     setPaymentSaving,
   ] = useState(false);
 
-  const [
-    paymentSending,
-    setPaymentSending,
-  ] = useState(false);
-
   /* ======================= QR SCAN ======================= */
 
   const [qrToken, setQrToken] =
@@ -1669,74 +1664,162 @@ export default function Admin() {
       return;
     }
 
+    const existing =
+      getPaymentByRegistration(
+        selectedPaymentRegistration.id
+      );
+
+    if (!existing) {
+      alert(
+        "Rekodi ya malipo haijapatikana. Usajili mpya unatakiwa kuwa na rekodi ya malipo iliyotengenezwa na mfumo."
+      );
+
+      return;
+    }
+
+    const trustedAmountDue =
+      Number(
+        existing.amount_due ??
+          selectedPaymentRegistration.package_price ??
+          0
+      );
+
+    const amountPaid =
+      Number(
+        paymentForm.amount_paid ||
+          0
+      );
+
+    if (
+      !Number.isFinite(amountPaid) ||
+      amountPaid < 0
+    ) {
+      alert(
+        "Kiasi kilicholipwa si sahihi."
+      );
+
+      return;
+    }
+
+    const paymentMethod =
+      paymentForm.payment_method
+        .trim();
+
+    const paymentReference =
+      paymentForm
+        .payment_reference
+        .trim();
+
+    if (amountPaid > 0) {
+      if (!paymentMethod) {
+        alert(
+          "Weka njia ya malipo kabla ya kuhifadhi malipo yaliyowasilishwa."
+        );
+
+        return;
+      }
+
+      if (!paymentReference) {
+        alert(
+          "Weka kumbukumbu/rejea ya malipo kabla ya kuhifadhi."
+        );
+
+        return;
+      }
+    }
+
     setPaymentSaving(true);
 
     try {
-      const existing =
-        getPaymentByRegistration(
-          selectedPaymentRegistration.id
-        );
+      const nextStatus =
+        amountPaid > 0 &&
+        existing.payment_status !==
+          "verified"
+          ? "submitted"
+          : existing.payment_status;
 
       const payload = {
-        registration_id:
-          selectedPaymentRegistration.id,
-
         amount_due:
-          Number(
-            paymentForm.amount_due ||
-              selectedPaymentRegistration.package_price ||
-              0
-          ),
+          trustedAmountDue,
 
         amount_paid:
-          Number(
-            paymentForm.amount_paid ||
-              0
-          ),
+          amountPaid,
 
         payment_method:
-          paymentForm.payment_method
-            .trim() || null,
+          paymentMethod || null,
 
         payment_reference:
-          paymentForm
-            .payment_reference
-            .trim() || null,
+          paymentReference || null,
 
         notes:
           paymentForm.notes
             .trim() || null,
+
+        payment_status:
+          nextStatus,
+
+        updated_at:
+          new Date().toISOString(),
       };
 
-      let response;
+      const {
+        error: paymentUpdateError,
+      } =
+        await supabase
+          .from("payments")
+          .update(payload)
+          .eq(
+            "id",
+            existing.id
+          );
 
-      if (existing) {
-        response =
+      if (paymentUpdateError) {
+        throw paymentUpdateError;
+      }
+
+      if (
+        amountPaid > 0 &&
+        existing.payment_status !==
+          "verified"
+      ) {
+        const {
+          error: registrationUpdateError,
+        } =
           await supabase
-            .from("payments")
-            .update(payload)
+            .from("registrations")
+            .update({
+              hali_ya_malipo:
+                "inasubiri_uthibitisho",
+
+              hali_ya_usajili:
+                "amelipa",
+
+              kiasi_malipo:
+                amountPaid,
+
+              kumbukumbu_malipo:
+                paymentReference ||
+                null,
+
+              updated_at:
+                new Date().toISOString(),
+            })
             .eq(
               "id",
-              existing.id
+              selectedPaymentRegistration.id
             );
-      } else {
-        response =
-          await supabase
-            .from("payments")
-            .insert([
-              {
-                ...payload,
-                payment_status:
-                  "pending",
-              },
-            ]);
+
+        if (
+          registrationUpdateError
+        ) {
+          throw registrationUpdateError;
+        }
       }
 
-      if (response.error) {
-        throw response.error;
-      }
-
-      await loadPayments();
+      await Promise.all([
+        loadPayments(),
+        loadRegistrations(),
+      ]);
 
       closePaymentEditor();
     } catch (paymentError) {
@@ -1754,32 +1837,27 @@ export default function Admin() {
     payment,
     status
   ) {
+    if (!payment) {
+      return;
+    }
+
+    if (status === "verified") {
+      await verifyPaymentAndIssueTicket(
+        payment
+      );
+
+      return;
+    }
+
     const patch = {
       payment_status: status,
+      updated_at:
+        new Date().toISOString(),
     };
 
     if (status === "paid") {
       patch.paid_at =
         new Date().toISOString();
-    }
-
-    if (status === "verified") {
-      patch.verified_at =
-        new Date().toISOString();
-
-      patch.verified_by =
-        session.user.id;
-
-      if (
-        Number(
-          payment.amount_paid || 0
-        ) <= 0
-      ) {
-        patch.amount_paid =
-          Number(
-            payment.amount_due || 0
-          );
-      }
     }
 
     const {
@@ -1800,14 +1878,222 @@ export default function Admin() {
       return;
     }
 
-    if (status === "verified") {
-      await updateStatus(
-        payment.registration_id,
-        "amelipa"
+    await loadPayments();
+  }
+
+  async function verifyPaymentAndIssueTicket(
+    payment
+  ) {
+    const registration =
+      getRegistration(
+        payment.registration_id
       );
+
+    if (!registration) {
+      alert(
+        "Usajili wa mshiriki haujapatikana."
+      );
+
+      return;
     }
 
-    await loadPayments();
+    if (
+      payment.payment_status ===
+        "verified" &&
+      getTicketByRegistration(
+        registration.id
+      )
+    ) {
+      alert(
+        "Malipo tayari yamehakikiwa na tiketi tayari imetolewa."
+      );
+
+      return;
+    }
+
+    const amountDue =
+      Number(
+        payment.amount_due || 0
+      );
+
+    const amountPaid =
+      Number(
+        payment.amount_paid || 0
+      );
+
+    if (
+      amountDue <= 0 ||
+      amountPaid < amountDue
+    ) {
+      alert(
+        `Malipo hayajafikia kiasi kinachodaiwa. Inadaiwa TSh ${money(
+          amountDue
+        )}, imelipwa TSh ${money(
+          amountPaid
+        )}.`
+      );
+
+      return;
+    }
+
+    if (
+      !String(
+        payment.payment_method ||
+          ""
+      ).trim()
+    ) {
+      alert(
+        "Weka njia ya malipo kabla ya kuhakiki."
+      );
+
+      return;
+    }
+
+    if (
+      !String(
+        payment.payment_reference ||
+          ""
+      ).trim()
+    ) {
+      alert(
+        "Weka kumbukumbu/rejea ya malipo kabla ya kuhakiki."
+      );
+
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Thibitisha malipo ya TSh ${money(
+          amountPaid
+        )} kwa ${
+          registration.jina_kamili
+        } na utoe tiketi sasa?`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setPaymentSaving(true);
+
+    try {
+      const now =
+        new Date().toISOString();
+
+      const {
+        error: paymentUpdateError,
+      } =
+        await supabase
+          .from("payments")
+          .update({
+            payment_status:
+              "verified",
+
+            paid_at:
+              payment.paid_at ||
+              now,
+
+            verified_at:
+              now,
+
+            verified_by:
+              session.user.id,
+
+            updated_at:
+              now,
+          })
+          .eq(
+            "id",
+            payment.id
+          );
+
+      if (paymentUpdateError) {
+        throw paymentUpdateError;
+      }
+
+      const {
+        error: registrationUpdateError,
+      } =
+        await supabase
+          .from("registrations")
+          .update({
+            hali_ya_malipo:
+              "imelipwa",
+
+            hali_ya_usajili:
+              "amethibitishwa",
+
+            kiasi_malipo:
+              amountPaid,
+
+            kumbukumbu_malipo:
+              payment.payment_reference,
+
+            updated_at:
+              now,
+          })
+          .eq(
+            "id",
+            registration.id
+          );
+
+      if (
+        registrationUpdateError
+      ) {
+        throw registrationUpdateError;
+      }
+
+      let ticket =
+        getTicketByRegistration(
+          registration.id
+        );
+
+      if (!ticket) {
+        const {
+          data: ticketData,
+          error: ticketError,
+        } =
+          await supabase.rpc(
+            "issue_ticket",
+            {
+              p_registration_id:
+                registration.id,
+            }
+          );
+
+        if (ticketError) {
+          throw ticketError;
+        }
+
+        ticket = ticketData;
+      }
+
+      await Promise.all([
+        loadPayments(),
+        loadRegistrations(),
+        loadTickets(),
+      ]);
+
+      if (ticket) {
+        setSelectedTicket(ticket);
+      }
+
+      alert(
+        "Malipo yamehakikiwa na tiketi imetolewa kwa mafanikio."
+      );
+    } catch (verificationError) {
+      console.error(
+        verificationError
+      );
+
+      alert(
+        verificationError?.message ||
+          "Imeshindikana kuhakiki malipo na kutoa tiketi."
+      );
+    } finally {
+      setPaymentSaving(false);
+    }
   }
 
   function buildPaymentMessage(
@@ -1819,19 +2105,6 @@ export default function Admin() {
       registration.package_price ??
       0;
 
-    const method =
-      payment?.payment_method
-        ? `Njia ya malipo: ${payment.payment_method}.`
-        : "";
-
-    const reference =
-      payment?.payment_reference
-        ? `Rejea: ${payment.payment_reference}.`
-        : "";
-
-    const notes =
-      payment?.notes || "";
-
     return `Habari ${
       registration.jina_kamili
     }, maelekezo ya malipo ya ${FESTIVAL_NAME}. Kifurushi: ${
@@ -1839,66 +2112,7 @@ export default function Admin() {
       "Ushiriki"
     }. Kiasi: TSh ${money(
       amount
-    )}. ${method} ${reference} ${notes}`.trim();
-  }
-
-  async function sendPaymentSms(
-    registration,
-    payment
-  ) {
-    if (!registration?.namba_simu) {
-      alert(
-        "Mshiriki hana namba ya simu."
-      );
-
-      return;
-    }
-
-    setPaymentSending(true);
-
-    try {
-      const {
-        error: smsError,
-      } =
-        await supabase.functions.invoke(
-          "send-sms",
-          {
-            body: {
-              to:
-                registration.namba_simu,
-
-              message:
-                buildPaymentMessage(
-                  registration,
-                  payment
-                ),
-            },
-          }
-        );
-
-      if (smsError) {
-        throw smsError;
-      }
-
-      if (payment) {
-        await setPaymentStatus(
-          payment,
-          "instructions_sent"
-        );
-      }
-
-      alert(
-        "Maelekezo ya malipo yametumwa."
-      );
-    } catch (smsError) {
-      console.error(smsError);
-
-      alert(
-        "SMS haijatumwa. Angalia Sender ID/API."
-      );
-    } finally {
-      setPaymentSending(false);
-    }
+    )}. CRDB: 0152000DCLM00 - LEAH TIBAIJUKA. NMB: 32910012349 - LEAH TIBAIJUKA. Baada ya malipo, tuma uthibitisho kwa Kamati.`;
   }
 
   function openPaymentWhatsApp(
@@ -1932,6 +2146,19 @@ export default function Admin() {
   async function issueTicket(
     registration
   ) {
+    const existingTicket =
+      getTicketByRegistration(
+        registration.id
+      );
+
+    if (existingTicket) {
+      setSelectedTicket(
+        existingTicket
+      );
+
+      return;
+    }
+
     const payment =
       getPaymentByRegistration(
         registration.id
@@ -1939,7 +2166,7 @@ export default function Admin() {
 
     if (!payment) {
       alert(
-        "Tengeneza rekodi ya malipo kwanza."
+        "Rekodi ya malipo haijapatikana."
       );
 
       return;
@@ -1973,16 +2200,14 @@ export default function Admin() {
         throw ticketError;
       }
 
-      await loadTickets();
+      await Promise.all([
+        loadTickets(),
+        loadRegistrations(),
+      ]);
 
       if (data) {
         setSelectedTicket(data);
       }
-
-      await updateStatus(
-        registration.id,
-        "amethibitishwa"
-      );
     } catch (ticketError) {
       console.error(ticketError);
 
@@ -2315,56 +2540,6 @@ export default function Admin() {
 
       alert(
         "Imeshindikana kushare picha ya tiketi."
-      );
-    }
-  }
-
-  async function sendTicketSms(
-    ticket
-  ) {
-    const registration =
-      getRegistration(
-        ticket.registration_id
-      );
-
-    if (
-      !registration?.namba_simu
-    ) {
-      return;
-    }
-
-    try {
-      const {
-        error: smsError,
-      } =
-        await supabase.functions.invoke(
-          "send-sms",
-          {
-            body: {
-              to:
-                registration.namba_simu,
-
-              message:
-                buildTicketMessage(
-                  registration,
-                  ticket
-                ),
-            },
-          }
-        );
-
-      if (smsError) {
-        throw smsError;
-      }
-
-      alert(
-        "Taarifa za tiketi zimetumwa."
-      );
-    } catch (smsError) {
-      console.error(smsError);
-
-      alert(
-        "SMS ya tiketi haijatumwa."
       );
     }
   }
@@ -4152,17 +4327,6 @@ export default function Admin() {
                                   <>
                                     <button
                                       onClick={() =>
-                                        sendPaymentSms(
-                                          registration,
-                                          payment
-                                        )
-                                      }
-                                    >
-                                      SMS
-                                    </button>
-
-                                    <button
-                                      onClick={() =>
                                         openPaymentWhatsApp(
                                           registration,
                                           payment
@@ -4176,6 +4340,9 @@ export default function Admin() {
                                       "verified" && (
                                       <button
                                         className="success"
+                                        disabled={
+                                          paymentSaving
+                                        }
                                         onClick={() =>
                                           setPaymentStatus(
                                             payment,
@@ -4183,13 +4350,13 @@ export default function Admin() {
                                           )
                                         }
                                       >
-                                        Verify
+                                        Hakiki + Toa Tiketi
                                       </button>
                                     )}
 
                                     {payment.payment_status ===
                                       "verified" &&
-                                      !getTicketByRegistration(
+                                      getTicketByRegistration(
                                         registration.id
                                       ) && (
                                         <button
@@ -4199,7 +4366,7 @@ export default function Admin() {
                                             )
                                           }
                                         >
-                                          Toa Tiketi
+                                          Fungua Tiketi
                                         </button>
                                       )}
                                   </>
@@ -4366,16 +4533,6 @@ export default function Admin() {
                                   }
                                 >
                                   Copy QR
-                                </button>
-
-                                <button
-                                  onClick={() =>
-                                    sendTicketSms(
-                                      ticket
-                                    )
-                                  }
-                                >
-                                  SMS
                                 </button>
 
                                 <button
@@ -4911,20 +5068,14 @@ export default function Admin() {
                 savePayment
               }
             >
-              <Field label="Amount Due">
+              <Field label="Kiasi Kinachodaiwa">
                 <input
                   type="number"
                   value={
                     paymentForm.amount_due
                   }
-                  onChange={(event) =>
-                    setPaymentForm({
-                      ...paymentForm,
-                      amount_due:
-                        event.target
-                          .value,
-                    })
-                  }
+                  readOnly
+                  title="Kiasi hiki kimetokana na kifurushi kilichothibitishwa na mfumo."
                 />
               </Field>
 
@@ -4947,7 +5098,7 @@ export default function Admin() {
 
               <Field label="Payment Method">
                 <input
-                  placeholder="M-Pesa / Bank / Cash..."
+                  placeholder="CRDB / NMB / Bank Transfer"
                   value={
                     paymentForm.payment_method
                   }
@@ -4984,7 +5135,7 @@ export default function Admin() {
               >
                 <textarea
                   rows="5"
-                  placeholder="Mfano: Lipa kupitia M-Pesa namba ... jina ..."
+                  placeholder="Maelezo ya uthibitisho wa malipo au kumbukumbu ya ziada"
                   value={
                     paymentForm.notes
                   }
@@ -5121,11 +5272,6 @@ export default function Admin() {
                       onClick={() => copyTicketToken(selectedTicket)}
                     >
                       Copy QR Token
-                    </button>
-                    <button
-                      onClick={() => sendTicketSms(selectedTicket)}
-                    >
-                      Tuma SMS
                     </button>
                     <button
                       onClick={() => sendTicketWhatsApp(selectedTicket)}
